@@ -28,4 +28,4 @@ def test_issubtype(a: m.MetaType, b: m.MetaType, expected: bool) -> None:
     registry = m.Registry()
     registry.add(m.Name("builtins->int"), m.Class(m.Name("builtins->int"), (), {}))
     actual = check.issubtype(registry, a, b)
-    assert actual == expected
+    assert (actual is None) == expected

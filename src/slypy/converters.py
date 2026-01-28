@@ -1,3 +1,4 @@
+from collections import abc
 from dataclasses import dataclass
 import enum
 import functools
@@ -14,22 +15,23 @@ cache: Callable[[F], F] = functools.cache  # type: ignore
 MethodKind = typing.Literal["method", "classmethod", "staticmethod"]
 type Function = Callable[..., Any] | types.FunctionType | classmethod[Any, Any, Any] | staticmethod[Any, Any]
 
-TYPING_ATOMS = (
-    typing.Any,
-    typing.AnyStr,
-    typing.LiteralString,
-    typing.Never,
-    typing.NoReturn,
-    typing.Self,
-    typing.TypeAlias,
-    typing.ParamSpecArgs,
-    typing.ParamSpecKwargs,
-    typing.TypeAliasType,
-    typing.NamedTuple,
-    typing.TypedDict,
-    typing.Protocol,
-)
+TYPING_ATOMS = {
+    typing.Any: m.Any,
+    typing.AnyStr: None,
+    typing.LiteralString: None,
+    typing.Never: None,
+    typing.NoReturn: None,
+    typing.Self: m.Self,
+    typing.TypeAlias: None,
+    typing.ParamSpecArgs: None,
+    typing.ParamSpecKwargs: None,
+    typing.TypeAliasType: None,
+    typing.NamedTuple: None,
+    typing.TypedDict: None,
+    typing.Protocol: None,
+}
 TYPING_GENERICS = (
+    abc.Callable,
     typing.Union,
     types.UnionType,
     typing.Optional,
@@ -37,9 +39,9 @@ TYPING_GENERICS = (
     typing.Literal,
     typing.ClassVar,
     typing.Final,
-    typing.Required,
-    typing.NotRequired,
-    typing.ReadOnly,
+    typing.Required,  # Used in TypedDict
+    typing.NotRequired,  # Used in TypedDict
+    typing.ReadOnly,  # Used in TypedDict
     typing.Annotated,
     typing.TypeIs,
     typing.TypeGuard,
@@ -94,20 +96,20 @@ class Context:
 
     def add(self, t: Any | type[inspect._empty]) -> m.MetaType:
         if t is inspect._empty:
-            # TODO: convert these to replace(m.unknown, position=)
-            return m.unknown.name
-
-        if t in TYPING_ATOMS:
-            if t is typing.Self:
-                return m.self.name
-            raise NotImplementedError()
+            return m.Unknown()
 
         if typing.get_args(t):
             return convert_with_args(self, t)
 
+        if t in TYPING_ATOMS:
+            if (meta_atom_cls := TYPING_ATOMS[t]) is not None:
+                return meta_atom_cls()
+            raise NotImplementedError()
+
         if isinstance(t, type):
             name = to_name(t)
             if name not in self.registry:
+                self.registry.add(name, name)
                 meta_cls = convert_class(self, t)
                 self.registry.add(name, meta_cls)
             return name
@@ -115,6 +117,7 @@ class Context:
         if isinstance(t, types.FunctionType):
             name = to_name(t)
             if name not in self.registry:
+                self.registry.add(name, name)
                 meta_fn = convert_function(self, t, name)
                 self.registry.add(name, meta_fn)
             return name
@@ -146,7 +149,16 @@ def convert_with_args(c: Context, t: Any) -> m.MetaType:
             return m.Union(*literals)
         if origin is typing.Union or origin is types.UnionType:
             return m.Union(*(c.add(arg) for arg in args))
+        if origin is abc.Callable:
+            [params, return_type] = args
+            parameters = (
+                tuple(m.Parameter(kind=m.ParameterKind.POSITIONAL_ONLY, name=None, t=c.add(param)) for param in params)
+                if isinstance(params, list)
+                else None
+            )
+            return m.Fn(parameters=parameters, returns=c.add(return_type))
         raise NotImplementedError()
+
     return m.Bound(c.add(origin), tuple(c.add(arg) for arg in args))
 
 

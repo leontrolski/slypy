@@ -1,5 +1,8 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
 from functools import partial
-from typing import assert_never
+from typing import Literal, assert_never
 from slypy import metatypes as m
 
 Unsupported = (
@@ -13,47 +16,94 @@ Unsupported = (
     | m.Tuple
     | m.Not
     | m.Intersection
+    | m.Self
 )
 
 
-# TODO: some caching
-def issubtype(registry: m.Registry, a: m.MetaType, b: m.MetaType) -> bool:
-    a, b = canonicalize(registry, a), canonicalize(registry, b)
-    # reasons = list[str]()
+@dataclass
+class NotIsSubType:
+    a: m.MetaType
+    b: m.MetaType
+    message: Literal[
+        "{a} is Unknown",
+        "{b} is Unknown",
+        "{a} is an Error",
+        "{b} is an Error",
+        "union {a} is not a subtype of {b}",
+        "{a} is not a subtype of union {b}",
+        "{a} != {b}",
+        "type of {a} is not a subtype of {b}",
+        "{a} is not a subtype of class {b}",
+        "class {a} is not a subtype of {b}",
+    ]
+    because: list[NotIsSubType] = field(default_factory=list)
 
-    def _issubtype(a: m.MetaType, b: m.MetaType) -> bool:
+
+# TODO: some caching
+def issubtype(registry: m.Registry, a: m.MetaType, b: m.MetaType) -> NotIsSubType | None:
+    a, b = canonicalize(registry, a), canonicalize(registry, b)
+
+    def _issubtype(a: m.MetaType, b: m.MetaType) -> NotIsSubType | None:
+        if isinstance(a, Unsupported) or isinstance(b, Unsupported):
+            raise NotImplementedError()
+
         if isinstance(a, m.Name):
             return f(registry.get(a), b)
         if isinstance(b, m.Name):
             return f(a, registry.get(b))
-
-        if isinstance(a, Unsupported):
-            raise NotImplementedError()
-        if isinstance(b, Unsupported):
-            raise NotImplementedError()
-
-        if isinstance(a, m.Error) or isinstance(b, m.Error):
-            return False
+        if isinstance(a, m.Any):
+            return None
+        if isinstance(b, m.Any):
+            return None
+        if isinstance(a, m.Unknown):
+            return NotIsSubType(a, b, "{a} is Unknown")
+        if isinstance(b, m.Unknown):
+            return NotIsSubType(a, b, "{b} is Unknown")
+        if isinstance(a, m.Error):
+            return NotIsSubType(a, b, "{a} is an Error")
+        if isinstance(b, m.Error):
+            return NotIsSubType(a, b, "{b} is an Error")
 
         # TODO: handle truthiness
         # if isinstance(a, m._AlwaysTruthy | m._AlwaysFalsy) or isinstance(b, m._AlwaysTruthy | m._AlwaysFalsy):
         #     raise NotImplementedError()  # TODO: handle Literal[0] etc. see BOOL_MAP and ty tests with `int` gotchas
 
         if isinstance(a, m.Union):
-            return all(f(x, b) for x in a.ts)
+            # return all(f(x, b) for x in a.ts)
+            inner = [f(x, b) for x in a.ts]
+            because = [x for x in inner if x is not None]
+            if because:
+                return NotIsSubType(a, b, "union {a} is not a subtype of {b}", because)
+            return None
         if isinstance(b, m.Union):
-            return any(f(a, y) for y in b.ts)
+            # return any(f(a, y) for y in b.ts)
+            inner = [f(a, y) for y in b.ts]
+            because = [x for x in inner if x is not None]
+            if len(inner) == len(because):
+                return NotIsSubType(a, b, "{a} is not a subtype of union {b}", because)
+            return None
 
         if isinstance(b, m.Literal):
-            return a == b
+            if a == b:
+                return None
+            return NotIsSubType(a, b, "{a} != {b}")
+
         if isinstance(a, m.Literal):
-            return f(a.t, b)
+            next_ = f(a.t, b)
+            if next_ is None:
+                return None
+            because = [next_]
+            return NotIsSubType(a, b, "type of {a} is not a subtype of {b}", because)
 
         if isinstance(b, m.Class):
             # TODO: handle generics, subclassing
-            return isinstance(a, m.Class) and a.name == b.name
+            if isinstance(a, m.Class) and a.name == b.name:
+                return None
+            return NotIsSubType(a, b, "{a} is not a subtype of class {b}")
         if isinstance(a, m.Class):
-            return isinstance(b, m.Class) and a.name == a.name
+            if isinstance(b, m.Class) and a.name == b.name:
+                return None
+            return NotIsSubType(a, b, "class {a} is not a subtype of {b}")
 
         assert_never(a)
         assert_never(b)
@@ -73,6 +123,7 @@ Passthrough = (
     | m.Fn
     | m.TypeVar
     | m.Bound
+    | m.MetaTypeAtoms
 )
 
 
@@ -117,9 +168,9 @@ def canonicalize(registry: m.Registry, t: m.MetaType) -> m.MetaType:
         if isinstance(u, m.Intersection):
             # ~(A & B) -> ~A | ~B
             return f(m.Union(*(f(m.Not(u)) for u in u.ts)))
+        if isinstance(u, m.Any):
+            return m.Never  # ~Any = Never
         if isinstance(u, m.Class):
-            if u.name == m.object.name:
-                return m.Never  # ~Any = Never
             return m.Not(u)
         return m.Not(u)
 
@@ -143,7 +194,7 @@ def canonicalize(registry: m.Registry, t: m.MetaType) -> m.MetaType:
                 u.ts  #
                 if isinstance(u, m.Intersection)
                 else set()
-                if isinstance(u, m.Class) and u.name == m.object.name
+                if isinstance(u, m.Any)
                 else {u}
             )
 
@@ -158,8 +209,9 @@ def canonicalize(registry: m.Registry, t: m.MetaType) -> m.MetaType:
                     distributed |= dist.ts if isinstance(dist, m.Union) else {dist}
                 return m.Union(*distributed)
 
+        # The intersection of nothing is any type
         if not new_members:
-            return m.object  # Intersection of zero = Any
+            return m.Any()
         if len(new_members) == 1:
             return next(iter(new_members))
 

@@ -49,13 +49,13 @@ Bool = m.Class(m.Name("builtins->bool"), (), {})
             id="neg_intersection_to_union",
         ),
         pytest.param(
-            m.Not(m.object),
+            m.Not(m.Any()),
             m.Never,
             id="neg_any",
         ),
         pytest.param(
             m.Not(m.Never),
-            m.object,
+            m.Any(),
             id="neg_never",
         ),
         pytest.param(
@@ -64,13 +64,13 @@ Bool = m.Class(m.Name("builtins->bool"), (), {})
             id="union_with_never",
         ),
         pytest.param(
-            m.Intersection(A, m.object),
+            m.Intersection(A, m.Any()),
             A,
             id="intersection_with_any",
         ),
         pytest.param(
             m.Intersection(),
-            m.object,
+            m.Any(),
             id="empty_intersection",
         ),
         pytest.param(

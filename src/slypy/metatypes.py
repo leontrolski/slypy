@@ -6,18 +6,9 @@ import typing
 from slypy import errors, helpers
 
 
-def _empty_refs() -> dict[Name, MetaType]:
-    return {
-        unknown.name: unknown,
-        object.name: object,
-        self.name: self,
-    }
-
-
 @dataclass
 class Registry:
-    refs: dict[Name, MetaType] = field(default_factory=_empty_refs)
-    positions: dict[Name, helpers.Position] = field(default_factory=dict)
+    refs: dict[Name, MetaType] = field(default_factory=dict)
 
     def get(self, n: Name) -> MetaType:
         if n not in self:
@@ -27,10 +18,8 @@ class Registry:
     def __contains__(self, n: Name) -> bool:
         return n in self.refs
 
-    def add(self, n: Name, t: MetaType, position: helpers.Position | None = None) -> None:
+    def add(self, n: Name, t: MetaType) -> None:
         self.refs[n] = t
-        if position is not None:
-            self.positions[n] = position
 
 
 @dataclass(frozen=True)
@@ -123,14 +112,14 @@ class ParameterKind(enum.Enum):
 @dataclass(frozen=True, kw_only=True)
 class Parameter(_WithPosition):
     kind: ParameterKind
-    name: str
+    name: str | None
     t: MetaType
 
 
 @dataclass(frozen=True, kw_only=True)
 class Fn(_WithPosition):
     name: Name | None = None
-    parameters: tuple[Parameter, ...]
+    parameters: tuple[Parameter, ...] | None
     returns: MetaType
 
 
@@ -220,10 +209,23 @@ class Name(_WithPosition):
         return self.absolute_name.partition("->")[2] or None
 
 
-object = Class(Name("builtins->object"), (), {})
-unknown = Class(Name("<unknown>"), (), {})
-self = Class(Name("typing->Self"), (), {})
+@dataclass(frozen=True)
+class Any(_WithPosition): ...
 
+
+@dataclass(frozen=True)
+class Unknown(_WithPosition): ...
+
+
+@dataclass(frozen=True)
+class Self(_WithPosition): ...
+
+
+MetaTypeAtoms = (
+    Any  #
+    | Unknown
+    | Self
+)
 MetaType = (
     Literal  #
     | Error
@@ -240,6 +242,7 @@ MetaType = (
     | TypeVar
     | Bound
     | Name
+    | MetaTypeAtoms
 )
 
 
