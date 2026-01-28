@@ -1,13 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import KW_ONLY, dataclass, field, replace
+from dataclasses import KW_ONLY, dataclass, field
 import enum
 import typing
 from slypy import errors, helpers
 
 
 def _empty_refs() -> dict[Name, MetaType]:
-    return {unknown.name: unknown, object.name: object}
+    return {
+        unknown.name: unknown,
+        object.name: object,
+        self.name: self,
+    }
 
 
 @dataclass
@@ -78,11 +82,22 @@ class Tuple(_WithPosition):
 
 
 @dataclass(frozen=True)
+class EnumValue:
+    t: Name
+    name: str
+    value: str | int
+
+
+LiteralValueBefore = bool | int | float | bytes | str | enum.Enum | None
+LiteralValue = bool | int | float | bytes | str | EnumValue | None
+
+
+@dataclass(frozen=True)
 class Literal(_WithPosition):
-    value: helpers.LiteralValue
+    value: LiteralValue
     t: MetaType
 
-    def __init__(self, value: helpers.LiteralValue):
+    def __init__(self, value: LiteralValue) -> None:
         self.__dict__["value"] = value
         self.__dict__["t"] = literal_to_type_name(value)
 
@@ -94,51 +109,6 @@ class Literal(_WithPosition):
 class Error(_WithPosition):
     kind: errors.ErrorKind
     message: str
-
-
-@dataclass
-class _Class:
-    name: Name
-    bases: tuple[MetaType, ...]
-    ts: dict[str, MetaType]
-    type_vars: frozenset[TypeVar] = field(default_factory=frozenset)
-    bound: dict[TypeVar, MetaType] = field(default_factory=dict)
-    _hash: int = field(repr=False, compare=False, default=0)
-
-    position: helpers.Position | None = None
-
-    def bind(self, bound: dict[TypeVar, MetaType]) -> typing.Self:
-        out = replace(self, bound=bound)
-        out.__post_init__()
-        return out
-
-    # We assume we never mutate .ts, .bound
-    def __post_init__(self) -> None:
-        as_tuple = (
-            self.bases,
-            *self.ts.items(),
-            self.type_vars,
-            *self.bound.items(),
-        )
-        self._hash = hash(as_tuple)
-
-    def __hash__(self) -> int:
-        return self._hash
-
-    def __repr__(self) -> str:
-        return repr(self.name)
-
-
-@dataclass
-class Class(_Class):
-    def __hash__(self) -> int:
-        return super().__hash__()
-
-
-@dataclass
-class Protocol(_Class):
-    def __hash__(self) -> int:
-        return super().__hash__()
 
 
 class ParameterKind(enum.Enum):
@@ -174,6 +144,12 @@ class TypeVar(_WithPosition):
 
 
 @dataclass(frozen=True)
+class Bound(_WithPosition):
+    t: MetaType
+    bound: tuple[MetaType, ...]
+
+
+@dataclass(frozen=True)
 class Type(_WithPosition):
     t: MetaType
 
@@ -184,13 +160,48 @@ class ClassVar(_WithPosition):
 
 
 @dataclass(frozen=True)
-class Self(_WithPosition):
-    pass
-
-
-@dataclass(frozen=True)
 class Method(_WithPosition):
     t: Fn
+
+
+@dataclass
+class _Class:
+    name: Name
+    bases: tuple[MetaType, ...]
+    ts: dict[str, MetaType]
+    type_vars: frozenset[TypeVar] = field(default_factory=frozenset)
+    _hash: int = field(repr=False, compare=False, default=0)
+
+    position: helpers.Position | None = None
+
+    # We assume we never mutate .ts, .bound
+    def __post_init__(self) -> None:
+        as_tuple = (
+            self.name,
+            self.bases,
+            *self.ts.items(),
+            self.type_vars,
+            # *self.bound.items(),
+        )
+        self._hash = hash(as_tuple)
+
+    def __hash__(self) -> int:
+        return self._hash
+
+    def __repr__(self) -> str:
+        return repr(self.name)
+
+
+@dataclass
+class Class(_Class):
+    def __hash__(self) -> int:
+        return super().__hash__()
+
+
+@dataclass
+class Protocol(_Class):
+    def __hash__(self) -> int:
+        return super().__hash__()
 
 
 @dataclass(frozen=True)
@@ -211,6 +222,7 @@ class Name(_WithPosition):
 
 object = Class(Name("builtins->object"), (), {})
 unknown = Class(Name("<unknown>"), (), {})
+self = Class(Name("typing->Self"), (), {})
 
 MetaType = (
     Literal  #
@@ -224,9 +236,9 @@ MetaType = (
     | Not
     | Type
     | ClassVar
-    | Self
     | Method
     | TypeVar
+    | Bound
     | Name
 )
 
@@ -237,7 +249,7 @@ def python_to_meta(t: type[typing.Any]) -> Name:
     raise errors.SlyPyError(f"Unhandled type: {t}")
 
 
-def literal_to_type_name(value: helpers.LiteralValue) -> Name:
+def literal_to_type_name(value: LiteralValue) -> Name:
     if isinstance(value, bool):
         return Name("builtins->bool")
     if isinstance(value, int):
@@ -250,6 +262,12 @@ def literal_to_type_name(value: helpers.LiteralValue) -> Name:
         return Name("builtins->str")
     if value is None:
         return Name("builtins->NoneType")
-    if isinstance(value, helpers.EnumValue):
-        return Name(f"{value.absolute_name}.{value.name}")
+    if isinstance(value, EnumValue):
+        return value.t
     typing.assert_never(value)
+
+
+def assert_name(t: MetaType) -> Name:
+    if not isinstance(t, Name):
+        raise errors.SlyPyError(f"{t} is not a Name")
+    return t

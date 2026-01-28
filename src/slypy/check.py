@@ -7,9 +7,9 @@ Unsupported = (
     | m.Fn
     | m.Type
     | m.ClassVar
-    | m.Self
     | m.Method
     | m.TypeVar
+    | m.Bound
     | m.Tuple
     | m.Not
     | m.Intersection
@@ -68,11 +68,11 @@ Passthrough = (
     | m.Class
     | m.ClassVar
     | m.Method
-    | m.Self
     | m.Protocol
     | m.Type
     | m.Fn
     | m.TypeVar
+    | m.Bound
 )
 
 

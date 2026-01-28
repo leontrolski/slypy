@@ -2,15 +2,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-@dataclass(frozen=True)
-class EnumValue:
-    absolute_name: str
-    name: str
-
-
-LiteralValue = bool | int | float | bytes | str | EnumValue | None
-
-
 @dataclass(frozen=True, kw_only=True)
 class Position:
     path: Path
