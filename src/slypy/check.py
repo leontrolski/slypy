@@ -2,6 +2,19 @@ from functools import partial
 from typing import assert_never
 from slypy import metatypes as m
 
+Unsupported = (
+    m.Protocol  #
+    | m.Fn
+    | m.Type
+    | m.ClassVar
+    | m.Self
+    | m.Method
+    | m.TypeVar
+    | m.Tuple
+    | m.Not
+    | m.Intersection
+)
+
 
 # TODO: some caching
 def issubtype(registry: m.Registry, a: m.MetaType, b: m.MetaType) -> bool:
@@ -14,9 +27,9 @@ def issubtype(registry: m.Registry, a: m.MetaType, b: m.MetaType) -> bool:
         if isinstance(b, m.Name):
             return f(a, registry.get(b))
 
-        if isinstance(a, m.Protocol | m.Fn | m.Type | m.TypeVar | m.Tuple | m.Not | m.Intersection):
+        if isinstance(a, Unsupported):
             raise NotImplementedError()
-        if isinstance(b, m.Protocol | m.Fn | m.Type | m.TypeVar | m.Tuple | m.Not | m.Intersection):
+        if isinstance(b, Unsupported):
             raise NotImplementedError()
 
         if isinstance(a, m.Error) or isinstance(b, m.Error):
@@ -49,6 +62,20 @@ def issubtype(registry: m.Registry, a: m.MetaType, b: m.MetaType) -> bool:
     return f(a, b)
 
 
+Passthrough = (
+    m.Literal  #
+    | m.Error
+    | m.Class
+    | m.ClassVar
+    | m.Method
+    | m.Self
+    | m.Protocol
+    | m.Type
+    | m.Fn
+    | m.TypeVar
+)
+
+
 def canonicalize(registry: m.Registry, t: m.MetaType) -> m.MetaType:
     """Canonicalize types.
 
@@ -70,7 +97,7 @@ def canonicalize(registry: m.Registry, t: m.MetaType) -> m.MetaType:
     if isinstance(t, m.Name):
         return f(registry.get(t))
 
-    if isinstance(t, m.Literal | m.Error | m.Class | m.Protocol | m.Type | m.Fn | m.TypeVar):
+    if isinstance(t, Passthrough):
         return t
 
     if isinstance(t, m.Tuple):
@@ -91,7 +118,7 @@ def canonicalize(registry: m.Registry, t: m.MetaType) -> m.MetaType:
             # ~(A & B) -> ~A | ~B
             return f(m.Union(*(f(m.Not(u)) for u in u.ts)))
         if isinstance(u, m.Class):
-            if u.name == m.Any.name:
+            if u.name == m.object.name:
                 return m.Never  # ~Any = Never
             return m.Not(u)
         return m.Not(u)
@@ -116,7 +143,7 @@ def canonicalize(registry: m.Registry, t: m.MetaType) -> m.MetaType:
                 u.ts  #
                 if isinstance(u, m.Intersection)
                 else set()
-                if isinstance(u, m.Class) and u.name == m.Any.name
+                if isinstance(u, m.Class) and u.name == m.object.name
                 else {u}
             )
 
@@ -132,7 +159,7 @@ def canonicalize(registry: m.Registry, t: m.MetaType) -> m.MetaType:
                 return m.Union(*distributed)
 
         if not new_members:
-            return m.Any  # Intersection of zero = Any
+            return m.object  # Intersection of zero = Any
         if len(new_members) == 1:
             return next(iter(new_members))
 

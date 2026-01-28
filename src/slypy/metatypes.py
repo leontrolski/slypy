@@ -1,14 +1,18 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import KW_ONLY, dataclass, field, replace
 import enum
 import typing
 from slypy import errors, helpers
 
 
+def _empty_refs() -> dict[Name, MetaType]:
+    return {unknown.name: unknown, object.name: object}
+
+
 @dataclass
 class Registry:
-    refs: dict[Name, MetaType] = field(default_factory=dict)
+    refs: dict[Name, MetaType] = field(default_factory=_empty_refs)
     positions: dict[Name, helpers.Position] = field(default_factory=dict)
 
     def get(self, n: Name) -> MetaType:
@@ -26,7 +30,17 @@ class Registry:
 
 
 @dataclass(frozen=True)
-class Union:
+class _WithPosition:
+    _: KW_ONLY
+    position: helpers.Position | None = field(
+        default=None,
+        hash=False,
+        compare=False,
+    )
+
+
+@dataclass(frozen=True)
+class Union(_WithPosition):
     ts: frozenset[MetaType]
 
     def __init__(self, *args: MetaType):
@@ -40,7 +54,7 @@ Never = Union()
 
 
 @dataclass(frozen=True)
-class Intersection:
+class Intersection(_WithPosition):
     ts: frozenset[MetaType]
 
     def __init__(self, *args: MetaType):
@@ -51,7 +65,7 @@ class Intersection:
 
 
 @dataclass(frozen=True)
-class Not:
+class Not(_WithPosition):
     t: MetaType
 
     def __repr__(self) -> str:
@@ -59,12 +73,12 @@ class Not:
 
 
 @dataclass(frozen=True)
-class Tuple:
+class Tuple(_WithPosition):
     ts: tuple[MetaType, ...] | MetaType
 
 
 @dataclass(frozen=True)
-class Literal:
+class Literal(_WithPosition):
     value: helpers.LiteralValue
     t: MetaType
 
@@ -77,7 +91,7 @@ class Literal:
 
 
 @dataclass(frozen=True)
-class Error:
+class Error(_WithPosition):
     kind: errors.ErrorKind
     message: str
 
@@ -89,7 +103,9 @@ class _Class:
     ts: dict[str, MetaType]
     type_vars: frozenset[TypeVar] = field(default_factory=frozenset)
     bound: dict[TypeVar, MetaType] = field(default_factory=dict)
-    _hash: int = 0
+    _hash: int = field(repr=False, compare=False, default=0)
+
+    position: helpers.Position | None = None
 
     def bind(self, bound: dict[TypeVar, MetaType]) -> typing.Self:
         out = replace(self, bound=bound)
@@ -135,20 +151,21 @@ class ParameterKind(enum.Enum):
 
 # see `inspect.signature`
 @dataclass(frozen=True, kw_only=True)
-class Parameter:
+class Parameter(_WithPosition):
     kind: ParameterKind
     name: str
     t: MetaType
 
 
 @dataclass(frozen=True, kw_only=True)
-class Fn:
+class Fn(_WithPosition):
+    name: Name | None = None
     parameters: tuple[Parameter, ...]
     returns: MetaType
 
 
 @dataclass(frozen=True)
-class TypeVar:
+class TypeVar(_WithPosition):
     name: str
     at: Name
     bound: MetaType | None
@@ -157,12 +174,27 @@ class TypeVar:
 
 
 @dataclass(frozen=True)
-class Type:
+class Type(_WithPosition):
     t: MetaType
 
 
 @dataclass(frozen=True)
-class Name:
+class ClassVar(_WithPosition):
+    t: MetaType
+
+
+@dataclass(frozen=True)
+class Self(_WithPosition):
+    pass
+
+
+@dataclass(frozen=True)
+class Method(_WithPosition):
+    t: Fn
+
+
+@dataclass(frozen=True)
+class Name(_WithPosition):
     absolute_name: str
 
     def __repr__(self) -> str:
@@ -177,8 +209,8 @@ class Name:
         return self.absolute_name.partition("->")[2] or None
 
 
-Any = Class(Name("builtins->object"), (), {})
-Unknown = Class(Name("<unknown>"), (), {})
+object = Class(Name("builtins->object"), (), {})
+unknown = Class(Name("<unknown>"), (), {})
 
 MetaType = (
     Literal  #
@@ -191,6 +223,9 @@ MetaType = (
     | Intersection
     | Not
     | Type
+    | ClassVar
+    | Self
+    | Method
     | TypeVar
     | Name
 )
