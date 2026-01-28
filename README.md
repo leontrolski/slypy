@@ -1,3 +1,32 @@
+# TODO - required for MVP
+
+- Support conversion of `Generic` + `TypeVar`
+- Add end to end `issubtype` tests for everything.
+- Work through `Unsupported`, `Passthrough`.
+
+# TODO - nice to haves
+
+- `dataclass_transform` + `dataclass.field(...)`
+- `overload`
+- `TypedDict` + `Required` + `NotRequired` + `ReadOnly`
+- `NamedTuple`
+- `TypeIs`
+- `TypeVarTuple` + `Unpack`
+- `NewType`
+- `Final`
+- `final`
+- `AnyStr`
+- `LiteralString`
+- `Never`
+- `NoReturn`
+- `TypeAlias`
+- `ParamSpec` + `ParamSpecArgs` + `ParamSpecKwargs`
+- `TypeAliasType`
+- `Concatenate`
+- `TypeGuard`
+- `no_type_check`
+- `override`
+
 # Development
 
 ```shell

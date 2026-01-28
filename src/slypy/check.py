@@ -17,6 +17,7 @@ Unsupported = (
     | m.Not
     | m.Intersection
     | m.Self
+    | m.ReadOnly
 )
 
 
@@ -123,6 +124,7 @@ Passthrough = (
     | m.Fn
     | m.TypeVar
     | m.Bound
+    | m.ReadOnly
     | m.MetaTypeAtoms
 )
 

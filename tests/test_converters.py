@@ -2,12 +2,9 @@ from __future__ import annotations
 
 import decimal
 import enum
-from pathlib import Path
-from typing import Callable, Literal, Self
-from slypy import converters, metatypes as m, typeshed
+from typing import Annotated, Callable, ClassVar, Literal, Optional, Protocol, Self
+from slypy import converters, metatypes as m
 from slypy.typeshed import builtins
-
-TESTS = Path(__file__).parent.resolve()
 
 
 def f(x: int, *, y) -> int: ...  # type: ignore
@@ -37,10 +34,12 @@ class Baz:
 
 
 class MyClass:
+    class_var: ClassVar[int]
     bool_: bool
     literal: Literal["one", "two"]
     literal_enum: Literal[MyEnum.A, MyEnum.B]
     int_or_none: int | None
+    optional: Annotated[Optional[float], "Blergg"]
     decimal_: decimal.Decimal
     none: None
     object_: Bar
@@ -59,14 +58,12 @@ class MyClass:
 
 
 def test_converters_function() -> None:
-    registry = m.Registry()
-    c = converters.Context([TESTS, typeshed.PATH], registry)
+    r = m.Registry()
+    int_name = m.assert_name(converters.convert_and_add(r, builtins.int))
 
-    int_name = m.assert_name(c.add(builtins.int))
-
-    name = m.assert_name(c.add(f))
+    name = m.assert_name(converters.convert_and_add(r, f))
     assert name == m.Name("test_converters->f")
-    assert registry.get(name) == m.Fn(
+    assert r.get(name) == m.Fn(
         name=name,
         parameters=(
             m.Parameter(
@@ -83,9 +80,9 @@ def test_converters_function() -> None:
         returns=int_name,
     )
 
-    name = m.assert_name(c.add(g))
+    name = m.assert_name(converters.convert_and_add(r, g))
     assert name == m.Name("test_converters->g")
-    assert registry.get(name) == m.Fn(
+    assert r.get(name) == m.Fn(
         name=name,
         parameters=(),
         returns=m.Unknown(),
@@ -93,16 +90,16 @@ def test_converters_function() -> None:
 
 
 def test_converters_cls() -> None:
-    registry = m.Registry()
-    c = converters.Context([TESTS, typeshed.PATH], registry)
-
-    name = m.assert_name(c.add(MyClass))
-    assert registry.get(name) == m.Class(
+    r = m.Registry()
+    name = m.assert_name(converters.convert_and_add(r, MyClass))
+    assert r.get(name) == m.Class(
         m.Name("test_converters->MyClass"),
         (m.Name("builtins->object"),),
         {
+            "class_var": m.ClassVar(m.Name("builtins->int")),
             "bool_": m.Name("builtins->bool"),
             "int_or_none": m.Union(m.Name("builtins->int"), m.Name("builtins->NoneType")),
+            "optional": m.Union(m.Name("builtins->float"), m.Name("builtins->NoneType")),
             "decimal_": m.Name("decimal->Decimal"),
             "none": m.Name("builtins->NoneType"),
             "object_": m.Name("test_converters->Bar"),
@@ -185,8 +182,8 @@ def test_converters_cls() -> None:
         },
     )
 
-    name = m.assert_name(c.add(Recursive))
-    assert registry.get(name) == m.Class(
+    name = m.assert_name(converters.convert_and_add(r, Recursive))
+    assert r.get(name) == m.Class(
         m.Name("test_converters->Recursive"),
         (m.Name("builtins->object"),),
         {
@@ -196,5 +193,25 @@ def test_converters_cls() -> None:
             ),
             "parent": m.Union(m.Name("test_converters->Recursive"), converters.to_name(type(None))),
             "z": converters.to_name(int),
+        },
+    )
+
+
+class MyProtocol(Protocol):
+    x: int
+
+    @property
+    def y(self) -> str: ...
+
+
+def test_converters_protocol() -> None:
+    r = m.Registry()
+    name = m.assert_name(converters.convert_and_add(r, MyProtocol))
+    assert r.get(name) == m.Protocol(
+        m.Name("test_converters->MyProtocol"),
+        (),
+        {
+            "x": m.Name("builtins->int"),
+            "y": m.ReadOnly(m.Name("builtins->str")),
         },
     )

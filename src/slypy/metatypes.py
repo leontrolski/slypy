@@ -139,6 +139,11 @@ class Bound(_WithPosition):
 
 
 @dataclass(frozen=True)
+class ReadOnly(_WithPosition):
+    t: MetaType
+
+
+@dataclass(frozen=True)
 class Type(_WithPosition):
     t: MetaType
 
@@ -241,6 +246,7 @@ MetaType = (
     | Method
     | TypeVar
     | Bound
+    | ReadOnly
     | Name
     | MetaTypeAtoms
 )
