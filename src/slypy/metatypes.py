@@ -32,8 +32,12 @@ class _WithPosition:
 class Union(_WithPosition):
     ts: frozenset[MetaType]
 
-    def __init__(self, *args: MetaType):
-        self.__dict__["ts"] = frozenset(args)
+    @classmethod
+    def make(cls, *args: MetaType, position: helpers.Position | None = None) -> typing.Self:
+        return cls(
+            ts=frozenset(args),
+            position=position,
+        )
 
     def __repr__(self) -> str:
         return "(" + " | ".join(repr(t) for t in self.ts) + ")"
@@ -43,8 +47,12 @@ class Union(_WithPosition):
 class Intersection(_WithPosition):
     ts: frozenset[MetaType]
 
-    def __init__(self, *args: MetaType):
-        self.__dict__["ts"] = frozenset(args)
+    @classmethod
+    def make(cls, *args: MetaType, position: helpers.Position | None = None) -> typing.Self:
+        return cls(
+            ts=frozenset(args),
+            position=position,
+        )
 
     def __repr__(self) -> str:
         return "(" + " & ".join(repr(t) for t in self.ts) + ")"
@@ -79,9 +87,13 @@ class Literal(_WithPosition):
     value: LiteralValue
     t: MetaType
 
-    def __init__(self, value: LiteralValue) -> None:
-        self.__dict__["value"] = value
-        self.__dict__["t"] = literal_to_type_name(value)
+    @classmethod
+    def make(cls, value: LiteralValue, position: helpers.Position | None = None) -> typing.Self:
+        return cls(
+            value=value,
+            t=literal_to_type_name(value),
+            position=position,
+        )
 
     def __repr__(self) -> str:
         return f"Literal[{self.value!r}]"
@@ -160,7 +172,7 @@ class ClassVar(_WithPosition):
 
 @dataclass(frozen=True)
 class Method(_WithPosition):
-    t: Fn
+    t: MetaType  # Should always be `Fn`
 
 
 @dataclass
@@ -284,3 +296,70 @@ def assert_name(t: MetaType) -> Name:
     if not isinstance(t, Name):
         raise errors.SlyPyError(f"{t} is not a Name")
     return t
+
+
+def walk(t: MetaType, f: typing.Callable[[MetaType], MetaType]) -> MetaType:
+    t = f(t)
+    if isinstance(t, Any | Unknown | Self | Name | Error):
+        return t
+    elif isinstance(t, Not | Type | ClassVar | ReadOnly | Method):
+        return t.__class__(
+            t=walk(t.t, f),
+            position=t.position,
+        )
+    elif isinstance(t, Literal):
+        return t.__class__(
+            value=t.value,
+            t=t.t,
+            position=t.position,
+        )
+    elif isinstance(t, Union | Intersection):
+        return t.__class__(
+            ts=frozenset(walk(u, f) for u in t.ts),
+            position=t.position,
+        )
+    elif isinstance(t, Tuple):
+        return t.__class__(
+            ts=tuple(walk(u, f) for u in t.ts) if isinstance(t.ts, tuple) else walk(t.ts, f),
+            position=t.position,
+        )
+    elif isinstance(t, Fn):
+        return t.__class__(
+            name=t.name,
+            parameters=None
+            if t.parameters is None
+            else tuple(
+                Parameter(
+                    kind=p.kind,
+                    name=p.name,
+                    t=walk(p.t, f),
+                    position=p.position,
+                )
+                for p in t.parameters
+            ),
+            returns=walk(t.returns, f),
+            position=t.position,
+        )
+    elif isinstance(t, TypeVar):
+        return t.__class__(
+            name=t.name,
+            at=t.at,
+            bound=tuple(walk(b, f) for b in t.bound) if isinstance(t.bound, tuple) else walk(t.bound, f),
+            variance=t.variance,
+            position=t.position,
+        )
+    elif isinstance(t, Bound):
+        return t.__class__(
+            t=walk(t.t, f),
+            bound=tuple(walk(b, f) for b in t.bound),
+            position=t.position,
+        )
+    elif isinstance(t, Class | Protocol):
+        return t.__class__(
+            name=t.name,
+            bases=tuple(walk(b, f) for b in t.bases),
+            ts={k: walk(v, f) for k, v in t.ts.items()},
+            type_vars=tuple(typing.cast(TypeVar, walk(v, f)) for v in t.type_vars),
+            position=t.position,
+        )
+    typing.assert_never(t)

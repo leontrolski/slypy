@@ -3,6 +3,7 @@
 - Add end to end `issubtype` tests for everything.
 - Work through `Unsupported`, `Passthrough`.
 - Infer all `INFER`s
+- Replace loads of `raise errors.` with `return errors.`
 
 # TODO - nice to haves
 

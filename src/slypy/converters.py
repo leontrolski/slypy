@@ -132,10 +132,10 @@ def convert_with_args(r: m.Registry, s: Scope, t: Any) -> m.MetaType:
                     raise errors.SlyPyError(f"Cannot use {arg} as Literal value")
                 if isinstance(arg, enum.Enum):
                     arg = m.EnumValue(m.assert_name(convert_and_add(r, s, arg.__class__)), arg.name, arg.value)
-                literals.append(m.Literal(arg))
-            return m.Union(*literals)
+                literals.append(m.Literal.make(arg))
+            return m.Union.make(*literals)
         if origin is typing.Union or origin is types.UnionType:
-            return m.Union(*(convert_and_add(r, s, arg) for arg in args))
+            return m.Union.make(*(convert_and_add(r, s, arg) for arg in args))
         if origin is abc.Callable:
             [params, return_type] = args
             parameters = (
@@ -231,7 +231,6 @@ def convert_type_var(r: m.Registry, s: Scope, t: TypeVar) -> m.TypeVar:
     name = t.__name__
     if name in s.type_var_scope:
         return s.type_var_scope[name]
-    # TODO: this should return an `m.Error`
     if s.at is None:
         raise errors.SlyPyError("No name to attach TypeVar to")
 

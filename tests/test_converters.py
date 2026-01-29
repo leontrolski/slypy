@@ -100,8 +100,8 @@ def test_cls() -> None:
         {
             "class_var": m.ClassVar(m.Name("builtins->int")),
             "bool_": m.Name("builtins->bool"),
-            "int_or_none": m.Union(m.Name("builtins->int"), m.Name("builtins->NoneType")),
-            "optional": m.Union(m.Name("builtins->float"), m.Name("builtins->NoneType")),
+            "int_or_none": m.Union.make(m.Name("builtins->int"), m.Name("builtins->NoneType")),
+            "optional": m.Union.make(m.Name("builtins->float"), m.Name("builtins->NoneType")),
             "decimal_": m.Name("decimal->Decimal"),
             "none": m.Name("builtins->NoneType"),
             "object_": m.Name("test_converters->Bar"),
@@ -110,14 +110,14 @@ def test_cls() -> None:
                 (m.Name("test_converters->Bar"),),
             ),
             "recursive": m.Name("test_converters->Recursive"),
-            "literal": m.Union(m.Literal("one"), m.Literal("two")),
-            "literal_enum": m.Union(
-                m.Literal(m.EnumValue(converters.to_name(MyEnum), "A", "a")),
-                m.Literal(m.EnumValue(converters.to_name(MyEnum), "B", "b")),
+            "literal": m.Union.make(m.Literal.make("one"), m.Literal.make("two")),
+            "literal_enum": m.Union.make(
+                m.Literal.make(m.EnumValue(converters.to_name(MyEnum), "A", "a")),
+                m.Literal.make(m.EnumValue(converters.to_name(MyEnum), "B", "b")),
             ),
             "union_array": m.Bound(
                 m.Name("builtins->list"),
-                (m.Union(m.Name("builtins->int"), m.Name("builtins->NoneType")),),
+                (m.Union.make(m.Name("builtins->int"), m.Name("builtins->NoneType")),),
             ),
             "function": m.Fn(
                 position=None,
@@ -193,7 +193,7 @@ def test_cls() -> None:
                 converters.to_name(list),
                 (m.Name("test_converters->Recursive"),),
             ),
-            "parent": m.Union(m.Name("test_converters->Recursive"), converters.to_name(type(None))),
+            "parent": m.Union.make(m.Name("test_converters->Recursive"), converters.to_name(type(None))),
             "z": converters.to_name(int),
         },
     )

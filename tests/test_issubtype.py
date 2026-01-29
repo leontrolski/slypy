@@ -14,14 +14,22 @@ Int = m.Class(m.Name("builtins->int"), (), {})
     [
         (A, A, True),
         (A, B, False),
-        (m.Literal(1), Int, True),
-        (m.Literal(1), m.Union(m.Literal(1)), True),
-        (m.Literal(1), m.Union(m.Literal(1), m.Literal(2)), True),
-        (m.Union(m.Literal(1), m.Literal(2)), m.Union(m.Literal(1), m.Literal(2)), True),
-        (m.Union(m.Literal(1), m.Literal(2)), m.Union(m.Literal(1), m.Literal(2), m.Literal(4)), True),
-        (m.Union(m.Literal(1), m.Literal(2), m.Literal(4)), m.Union(m.Literal(1), m.Literal(2)), False),
-        (m.Union(m.Literal(1), m.Literal(2)), m.Literal(1), False),
-        (Int, m.Literal(1), False),
+        (m.Literal.make(1), Int, True),
+        (m.Literal.make(1), m.Union.make(m.Literal.make(1)), True),
+        (m.Literal.make(1), m.Union.make(m.Literal.make(1), m.Literal.make(2)), True),
+        (m.Union.make(m.Literal.make(1), m.Literal.make(2)), m.Union.make(m.Literal.make(1), m.Literal.make(2)), True),
+        (
+            m.Union.make(m.Literal.make(1), m.Literal.make(2)),
+            m.Union.make(m.Literal.make(1), m.Literal.make(2), m.Literal.make(4)),
+            True,
+        ),
+        (
+            m.Union.make(m.Literal.make(1), m.Literal.make(2), m.Literal.make(4)),
+            m.Union.make(m.Literal.make(1), m.Literal.make(2)),
+            False,
+        ),
+        (m.Union.make(m.Literal.make(1), m.Literal.make(2)), m.Literal.make(1), False),
+        (Int, m.Literal.make(1), False),
     ],
 )
 def test_issubtype(a: m.MetaType, b: m.MetaType, expected: bool) -> None:

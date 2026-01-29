@@ -166,12 +166,12 @@ def canonicalize(registry: m.Registry, t: m.MetaType) -> m.MetaType:
             return f(u.t)
         if isinstance(u, m.Union):
             # ~(A | B) -> ~A & ~B
-            return f(m.Intersection(*(f(m.Not(u)) for u in u.ts)))
+            return f(m.Intersection.make(*(f(m.Not(u)) for u in u.ts)))
         if isinstance(u, m.Intersection):
             # ~(A & B) -> ~A | ~B
-            return f(m.Union(*(f(m.Not(u)) for u in u.ts)))
+            return f(m.Union.make(*(f(m.Not(u)) for u in u.ts)))
         if isinstance(u, m.Any):
-            return m.Union()  # ~Any = Never
+            return m.Union.make()  # ~Any = Never
         if isinstance(u, m.Class):
             return m.Not(u)
         return m.Not(u)
@@ -185,7 +185,7 @@ def canonicalize(registry: m.Registry, t: m.MetaType) -> m.MetaType:
 
         if len(new_members) == 1:
             return next(iter(new_members))
-        return m.Union(*new_members)
+        return m.Union.make(*new_members)
 
     if isinstance(t, m.Intersection):
         # Flatten intersections and canonicalize members
@@ -207,9 +207,9 @@ def canonicalize(registry: m.Registry, t: m.MetaType) -> m.MetaType:
                 distributed = frozenset[m.MetaType]()
                 others = new_members - {u}
                 for v in u.ts:
-                    dist = f(m.Intersection(*(others | {v})))
+                    dist = f(m.Intersection.make(*(others | {v})))
                     distributed |= dist.ts if isinstance(dist, m.Union) else {dist}
-                return m.Union(*distributed)
+                return m.Union.make(*distributed)
 
         # The intersection of nothing is any type
         if not new_members:
@@ -224,6 +224,6 @@ def canonicalize(registry: m.Registry, t: m.MetaType) -> m.MetaType:
         #         if isinstance(bool_, m.Class) and bool_.absolute_name == constants.NAME_BOOL:
         #             return BOOL_MAP[truthy]
 
-        return m.Intersection(*new_members)
+        return m.Intersection.make(*new_members)
 
     assert_never(t)
