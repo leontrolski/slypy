@@ -381,7 +381,7 @@ def test_generic_functions() -> None:
                 t=m.TypeVar(
                     name="V",
                     at=m.Name("test_converters->f_with_generic_new_style"),
-                    bound=m.Any(),
+                    bound=m.Intersection.make(),
                 ),
             ),
         ),
@@ -389,7 +389,7 @@ def test_generic_functions() -> None:
             m.TypeVar(
                 name="V",
                 at=m.Name("test_converters->f_with_generic_new_style"),
-                bound=m.Any(),
+                bound=m.Intersection.make(),
             )
         ),
     )
@@ -448,7 +448,7 @@ def test_generic_with_methods() -> None:
                             t=m.TypeVar(
                                 name="U",
                                 at=m.Name("test_converters->MyGenericWithMethods.g"),
-                                bound=m.Any(),
+                                bound=m.Intersection.make(),
                             ),
                         ),
                     ),
@@ -458,7 +458,7 @@ def test_generic_with_methods() -> None:
                             m.TypeVar(
                                 name="U",
                                 at=m.Name("test_converters->MyGenericWithMethods.g"),
-                                bound=m.Any(),
+                                bound=m.Intersection.make(),
                             ),
                         ),
                     ),

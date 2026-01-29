@@ -54,6 +54,9 @@ class Intersection(_WithPosition):
             position=position,
         )
 
+    def is_any(self) -> bool:
+        return not self.ts
+
     def __repr__(self) -> str:
         return "(" + " & ".join(repr(t) for t in self.ts) + ")"
 
@@ -218,10 +221,6 @@ class Name(_WithPosition):
 
 
 @dataclass(frozen=True)
-class Any(_WithPosition): ...
-
-
-@dataclass(frozen=True)
 class Unknown(_WithPosition): ...
 
 
@@ -229,13 +228,10 @@ class Unknown(_WithPosition): ...
 class Self(_WithPosition): ...
 
 
-MetaTypeAtoms = (
-    Any  #
-    | Unknown
-    | Self
-)
 MetaType = (
-    Literal  #
+    Unknown  #
+    | Self
+    | Literal
     | Error
     | Tuple
     | Class
@@ -251,7 +247,6 @@ MetaType = (
     | Bound
     | ReadOnly
     | Name
-    | MetaTypeAtoms
 )
 
 
@@ -287,7 +282,7 @@ def assert_name(t: MetaType) -> Name:
 
 def walk(t: MetaType, f: typing.Callable[[MetaType], MetaType]) -> MetaType:
     t = f(t)
-    if isinstance(t, Any | Unknown | Self | Name | Error):
+    if isinstance(t, Unknown | Self | Name | Error):
         return t
     elif isinstance(t, Not | Type | ClassVar | ReadOnly | Method):
         return t.__class__(

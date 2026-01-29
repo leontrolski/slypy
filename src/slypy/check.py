@@ -45,6 +45,10 @@ def issubtype(registry: m.Registry, a: m.MetaType, b: m.MetaType) -> NotIsSubTyp
     a, b = canonicalize(registry, a), canonicalize(registry, b)
 
     def _issubtype(a: m.MetaType, b: m.MetaType) -> NotIsSubType | None:
+        if isinstance(a, m.Intersection) and a.is_any():
+            return None
+        if isinstance(b, m.Intersection) and b.is_any():
+            return None
         if isinstance(a, Unsupported) or isinstance(b, Unsupported):
             raise NotImplementedError()
 
@@ -52,10 +56,6 @@ def issubtype(registry: m.Registry, a: m.MetaType, b: m.MetaType) -> NotIsSubTyp
             return f(registry.get(a), b)
         if isinstance(b, m.Name):
             return f(a, registry.get(b))
-        if isinstance(a, m.Any):
-            return None
-        if isinstance(b, m.Any):
-            return None
         if isinstance(a, m.Unknown):
             return NotIsSubType(a, b, "{a} is Unknown")
         if isinstance(b, m.Unknown):
@@ -125,7 +125,8 @@ Passthrough = (
     | m.TypeVar
     | m.Bound
     | m.ReadOnly
-    | m.MetaTypeAtoms
+    | m.Unknown
+    | m.Self
 )
 
 
@@ -170,8 +171,6 @@ def canonicalize(registry: m.Registry, t: m.MetaType) -> m.MetaType:
         if isinstance(u, m.Intersection):
             # ~(A & B) -> ~A | ~B
             return f(m.Union.make(*(f(m.Not(u)) for u in u.ts)))
-        if isinstance(u, m.Any):
-            return m.Union.make()  # ~Any = Never
         if isinstance(u, m.Class):
             return m.Not(u)
         return m.Not(u)
@@ -195,8 +194,6 @@ def canonicalize(registry: m.Registry, t: m.MetaType) -> m.MetaType:
             new_members |= (
                 u.ts  #
                 if isinstance(u, m.Intersection)
-                else set()
-                if isinstance(u, m.Any)
                 else {u}
             )
 
@@ -211,9 +208,6 @@ def canonicalize(registry: m.Registry, t: m.MetaType) -> m.MetaType:
                     distributed |= dist.ts if isinstance(dist, m.Union) else {dist}
                 return m.Union.make(*distributed)
 
-        # The intersection of nothing is any type
-        if not new_members:
-            return m.Any()
         if len(new_members) == 1:
             return next(iter(new_members))
 

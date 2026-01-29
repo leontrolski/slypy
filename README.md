@@ -1,9 +1,16 @@
+# Notes
+
+- `Any` AKA `builtins->object` is equivalent to `Intersection([])`
+- `Any` is distinct from `Unknown` - see `ty` docs.
+- `Never` is equivalent to `Union([])`
+- `TypeVar(covariant=True, contravariant=True)` are ignored and we always pretend `TypeVar(infer_variance=True)` as per the new `class MyClass[T]:` syntax.
+
 # TODO - required for MVP
 
 - Add end to end `issubtype` tests for everything.
 - Work through `Unsupported`, `Passthrough`.
 - Infer variance.
-- Replace loads of `raise errors.` with `return errors.`
+- Replace most `raise errors.` with `return errors.`
 
 # TODO - nice to haves
 

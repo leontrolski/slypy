@@ -31,7 +31,7 @@ class Scope:
 
 
 TYPING_ATOMS = {
-    typing.Any: m.Any,
+    typing.Any: m.Intersection.make,
     typing.AnyStr: None,
     typing.LiteralString: None,
     typing.Never: m.Union.make,
@@ -235,7 +235,7 @@ def convert_type_var(r: m.Registry, s: Scope, t: TypeVar) -> m.TypeVar:
         raise errors.SlyPyError("No name to attach TypeVar to")
 
     # Note for t.__covariant__, t.__contravariant__, we pretend always t.__infer_variance__
-    bound: m.MetaType | tuple[m.MetaType, ...] = m.Any()
+    bound: m.MetaType | tuple[m.MetaType, ...] = m.Intersection.make()
     if t.__bound__ is not None:
         bound = convert_and_add(r, s, t.__bound__)
     if t.__constraints__:
