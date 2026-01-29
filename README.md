@@ -1,8 +1,8 @@
 # TODO - required for MVP
 
-- Support conversion of `Generic` + `TypeVar`
 - Add end to end `issubtype` tests for everything.
 - Work through `Unsupported`, `Passthrough`.
+- Infer all `INFER`s
 
 # TODO - nice to haves
 

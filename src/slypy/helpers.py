@@ -1,5 +1,11 @@
 from dataclasses import dataclass
+import enum
 from pathlib import Path
+
+
+class Enum(enum.Enum):
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}.{self.name}"
 
 
 @dataclass(frozen=True, kw_only=True)

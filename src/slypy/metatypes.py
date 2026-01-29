@@ -25,11 +25,7 @@ class Registry:
 @dataclass(frozen=True)
 class _WithPosition:
     _: KW_ONLY
-    position: helpers.Position | None = field(
-        default=None,
-        hash=False,
-        compare=False,
-    )
+    position: helpers.Position | None = None
 
 
 @dataclass(frozen=True)
@@ -41,9 +37,6 @@ class Union(_WithPosition):
 
     def __repr__(self) -> str:
         return "(" + " | ".join(repr(t) for t in self.ts) + ")"
-
-
-Never = Union()
 
 
 @dataclass(frozen=True)
@@ -100,7 +93,7 @@ class Error(_WithPosition):
     message: str
 
 
-class ParameterKind(enum.Enum):
+class ParameterKind(helpers.Enum):
     POSITIONAL_ONLY = 1
     POSITIONAL_OR_KEYWORD = 2
     VAR_POSITIONAL = 3
@@ -123,13 +116,25 @@ class Fn(_WithPosition):
     returns: MetaType
 
 
+class Variance(helpers.Enum):
+    INVARIANT = "INVARIANT"
+    COVARIANT = "COVARIANT"
+    CONTRAVARIANT = "CONTRAVARIANT"
+    INFER = "INFER"
+
+    def check_inferred(self) -> typing.Literal[Variance.INVARIANT, Variance.COVARIANT, Variance.CONTRAVARIANT]:
+        if self is Variance.INFER:
+            raise errors.SlyPyError("Variance not inferred yet")
+        return self
+
+
 @dataclass(frozen=True)
 class TypeVar(_WithPosition):
     name: str
     at: Name
-    bound: MetaType | None
-    constraints: tuple[MetaType, ...]
-    variance: typing.Literal["invariant", "covariant", "contravariant"]
+    # We set to `Any` for `bound=None` and `tuple(...)` for `constraints=...`
+    bound: MetaType | tuple[MetaType, ...]
+    variance: Variance
 
 
 @dataclass(frozen=True)
@@ -163,19 +168,18 @@ class _Class:
     name: Name
     bases: tuple[MetaType, ...]
     ts: dict[str, MetaType]
-    type_vars: frozenset[TypeVar] = field(default_factory=frozenset)
+    type_vars: tuple[TypeVar, ...] = ()
     _hash: int = field(repr=False, compare=False, default=0)
 
     position: helpers.Position | None = None
 
-    # We assume we never mutate .ts, .bound
+    # We assume we never mutate .ts
     def __post_init__(self) -> None:
         as_tuple = (
             self.name,
             self.bases,
             *self.ts.items(),
             self.type_vars,
-            # *self.bound.items(),
         )
         self._hash = hash(as_tuple)
 

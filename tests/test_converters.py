@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import decimal
 import enum
-from typing import Annotated, Callable, ClassVar, Literal, Optional, Protocol, Self
+from typing import Annotated, Callable, ClassVar, Generic, Literal, Optional, Protocol, Self, TypeVar
 from slypy import converters, metatypes as m
 from slypy.typeshed import builtins
 
@@ -57,11 +57,12 @@ class MyClass:
     def static_method(c: int) -> str: ...  # type: ignore
 
 
-def test_converters_function() -> None:
+def test_function() -> None:
     r = m.Registry()
-    int_name = m.assert_name(converters.convert_and_add(r, builtins.int))
+    s = converters.Scope()
+    int_name = m.assert_name(converters.convert_and_add(r, s, builtins.int))
 
-    name = m.assert_name(converters.convert_and_add(r, f))
+    name = m.assert_name(converters.convert_and_add(r, s, f))
     assert name == m.Name("test_converters->f")
     assert r.get(name) == m.Fn(
         name=name,
@@ -80,7 +81,7 @@ def test_converters_function() -> None:
         returns=int_name,
     )
 
-    name = m.assert_name(converters.convert_and_add(r, g))
+    name = m.assert_name(converters.convert_and_add(r, s, g))
     assert name == m.Name("test_converters->g")
     assert r.get(name) == m.Fn(
         name=name,
@@ -89,9 +90,10 @@ def test_converters_function() -> None:
     )
 
 
-def test_converters_cls() -> None:
+def test_cls() -> None:
     r = m.Registry()
-    name = m.assert_name(converters.convert_and_add(r, MyClass))
+    s = converters.Scope()
+    name = m.assert_name(converters.convert_and_add(r, s, MyClass))
     assert r.get(name) == m.Class(
         m.Name("test_converters->MyClass"),
         (m.Name("builtins->object"),),
@@ -182,7 +184,7 @@ def test_converters_cls() -> None:
         },
     )
 
-    name = m.assert_name(converters.convert_and_add(r, Recursive))
+    name = m.assert_name(converters.convert_and_add(r, s, Recursive))
     assert r.get(name) == m.Class(
         m.Name("test_converters->Recursive"),
         (m.Name("builtins->object"),),
@@ -204,14 +206,297 @@ class MyProtocol(Protocol):
     def y(self) -> str: ...
 
 
-def test_converters_protocol() -> None:
+def test_protocol() -> None:
     r = m.Registry()
-    name = m.assert_name(converters.convert_and_add(r, MyProtocol))
+    s = converters.Scope()
+    name = m.assert_name(converters.convert_and_add(r, s, MyProtocol))
     assert r.get(name) == m.Protocol(
         m.Name("test_converters->MyProtocol"),
-        (),
+        (m.Name("builtins->object"),),
         {
             "x": m.Name("builtins->int"),
             "y": m.ReadOnly(m.Name("builtins->str")),
         },
     )
+
+
+T = TypeVar("T", bound=int)
+U = TypeVar("U")
+
+
+class MyGeneric(Generic[T]):
+    x: T
+
+
+class MyGenericNewStyle[T: int](float):
+    x: T
+
+
+class MyGenericProtocolNoT(Protocol):
+    x: int
+
+
+TIntOrFloat = TypeVar("TIntOrFloat", int, float)
+
+
+class MyGenericProtocol(Protocol[TIntOrFloat]):
+    x: TIntOrFloat
+
+
+class MyGenericNewStyleProtocol[T: int](Protocol):
+    x: T
+
+
+class ListOfInts(list[int]): ...
+
+
+def test_generic() -> None:
+    r = m.Registry()
+    s = converters.Scope().with_at(m.Name("brr"))
+
+    assert converters.get_bases(r, s, MyGeneric) == converters.Bases(
+        bases=(m.Name("builtins->object"),),
+        is_protocol=False,
+        type_vars=(
+            m.TypeVar(
+                name="T",
+                at=m.Name("brr"),
+                bound=m.Name("builtins->int"),
+                variance=m.Variance.INVARIANT,
+            ),
+        ),
+    )
+    assert converters.get_bases(r, s, MyGenericNewStyle) == converters.Bases(
+        bases=(m.Name("builtins->float"),),
+        is_protocol=False,
+        type_vars=(
+            m.TypeVar(
+                name="T",
+                at=m.Name("brr"),
+                bound=m.Name("builtins->int"),
+                variance=m.Variance.INFER,
+            ),
+        ),
+    )
+    assert converters.get_bases(r, s, MyGenericProtocolNoT) == converters.Bases(
+        bases=(m.Name("builtins->object"),),
+        is_protocol=True,
+        type_vars=(),
+    )
+    assert converters.get_bases(r, s, MyGenericProtocol) == converters.Bases(
+        bases=(m.Name("builtins->object"),),
+        is_protocol=True,
+        type_vars=(
+            m.TypeVar(
+                name="TIntOrFloat",
+                at=m.Name("brr"),
+                bound=(
+                    m.Name("builtins->int"),
+                    m.Name("builtins->float"),
+                ),
+                variance=m.Variance.INVARIANT,
+            ),
+        ),
+    )
+    assert converters.get_bases(r, s, MyGenericNewStyleProtocol) == converters.Bases(
+        bases=(m.Name("builtins->object"),),
+        is_protocol=True,
+        type_vars=(
+            m.TypeVar(
+                name="T",
+                at=m.Name("brr"),
+                bound=m.Name("builtins->int"),
+                variance=m.Variance.INFER,
+            ),
+        ),
+    )
+    assert converters.get_bases(r, s, ListOfInts) == converters.Bases(
+        bases=(
+            m.Bound(
+                m.Name("builtins->list"),
+                (m.Name("builtins->int"),),
+            ),
+        ),
+        is_protocol=False,
+        type_vars=(),
+    )
+
+    name = m.assert_name(converters.convert_and_add(r, s, MyGeneric))
+    assert r.get(name) == m.Class(
+        m.Name("test_converters->MyGeneric"),
+        (m.Name("builtins->object"),),
+        {
+            "x": m.TypeVar(
+                name="T",
+                at=m.Name("test_converters->MyGeneric"),
+                bound=m.Name("builtins->int"),
+                variance=m.Variance.INVARIANT,
+            ),
+        },
+        (
+            m.TypeVar(
+                name="T",
+                at=m.Name("test_converters->MyGeneric"),
+                bound=m.Name("builtins->int"),
+                variance=m.Variance.INVARIANT,
+            ),
+        ),
+    )
+
+
+def f_with_generic(x: T) -> T:
+    return x
+
+
+def f_with_generic_new_style[V](x: V) -> tuple[V, ...]:
+    return (x,)
+
+
+def test_generic_functions() -> None:
+    r = m.Registry()
+    s = converters.Scope()
+
+    name = m.assert_name(converters.convert_and_add(r, s, f_with_generic))
+    assert r.get(name) == m.Fn(
+        name=m.Name("test_converters->f_with_generic"),
+        parameters=(
+            m.Parameter(
+                kind=m.ParameterKind.POSITIONAL_OR_KEYWORD,
+                name="x",
+                t=m.TypeVar(
+                    name="T",
+                    at=m.Name("test_converters->f_with_generic"),
+                    bound=m.Name("builtins->int"),
+                    variance=m.Variance.INVARIANT,
+                ),
+            ),
+        ),
+        returns=m.TypeVar(
+            name="T",
+            at=m.Name("test_converters->f_with_generic"),
+            bound=m.Name("builtins->int"),
+            variance=m.Variance.INVARIANT,
+        ),
+    )
+
+    name = m.assert_name(converters.convert_and_add(r, s, f_with_generic_new_style))
+    assert r.get(name) == m.Fn(
+        name=m.Name("test_converters->f_with_generic_new_style"),
+        parameters=(
+            m.Parameter(
+                kind=m.ParameterKind.POSITIONAL_OR_KEYWORD,
+                name="x",
+                t=m.TypeVar(
+                    name="V",
+                    at=m.Name("test_converters->f_with_generic_new_style"),
+                    bound=m.Any(),
+                    variance=m.Variance.INFER,
+                ),
+            ),
+        ),
+        returns=m.Tuple(
+            m.TypeVar(
+                name="V",
+                at=m.Name("test_converters->f_with_generic_new_style"),
+                bound=m.Any(),
+                variance=m.Variance.INFER,
+            )
+        ),
+    )
+
+
+class MyGenericWithMethods(Generic[T]):
+    def f(self) -> list[T]:
+        return []
+
+    def g(self, x: U) -> list[U]:
+        return [x]
+
+
+def test_generic_with_methods() -> None:
+    r = m.Registry()
+    s = converters.Scope()
+    name = m.assert_name(converters.convert_and_add(r, s, MyGenericWithMethods))
+    assert r.get(name) == m.Class(
+        m.Name("test_converters->MyGenericWithMethods"),
+        (m.Name("builtins->object"),),
+        {
+            "f": m.Method(
+                m.Fn(
+                    name=m.Name("test_converters->MyGenericWithMethods.f"),
+                    parameters=(
+                        m.Parameter(
+                            kind=m.ParameterKind.POSITIONAL_OR_KEYWORD,
+                            name="self",
+                            t=m.Unknown(),
+                        ),
+                    ),
+                    returns=m.Bound(
+                        m.Name("builtins->list"),
+                        (
+                            m.TypeVar(
+                                name="T",
+                                at=m.Name("test_converters->MyGenericWithMethods"),
+                                bound=m.Name("builtins->int"),
+                                variance=m.Variance.INVARIANT,
+                            ),
+                        ),
+                    ),
+                )
+            ),
+            "g": m.Method(
+                m.Fn(
+                    name=m.Name("test_converters->MyGenericWithMethods.g"),
+                    parameters=(
+                        m.Parameter(
+                            kind=m.ParameterKind.POSITIONAL_OR_KEYWORD,
+                            name="self",
+                            t=m.Unknown(),
+                        ),
+                        m.Parameter(
+                            kind=m.ParameterKind.POSITIONAL_OR_KEYWORD,
+                            name="x",
+                            t=m.TypeVar(
+                                name="U",
+                                at=m.Name("test_converters->MyGenericWithMethods.g"),
+                                bound=m.Any(),
+                                variance=m.Variance.INVARIANT,
+                            ),
+                        ),
+                    ),
+                    returns=m.Bound(
+                        m.Name("builtins->list"),
+                        (
+                            m.TypeVar(
+                                name="U",
+                                at=m.Name("test_converters->MyGenericWithMethods.g"),
+                                bound=m.Any(),
+                                variance=m.Variance.INVARIANT,
+                            ),
+                        ),
+                    ),
+                )
+            ),
+        },
+        (
+            m.TypeVar(
+                name="T",
+                at=m.Name("test_converters->MyGenericWithMethods"),
+                bound=m.Name("builtins->int"),
+                variance=m.Variance.INVARIANT,
+            ),
+        ),
+    )
+
+
+# TODO: test scoped TypeVars
+# class Foo[T]:
+#     class Bar[T]:
+#         ...
+#     ...
+# We will never hit this as we're not looking in function bodies
+# at runtime.
+# def f(x: T) -> T:
+#     def g(y: T) -> T:
+#         return y
+#     return x

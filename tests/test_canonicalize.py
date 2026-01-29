@@ -50,16 +50,16 @@ Bool = m.Class(m.Name("builtins->bool"), (), {})
         ),
         pytest.param(
             m.Not(m.Any()),
-            m.Never,
+            m.Union(),
             id="neg_any",
         ),
         pytest.param(
-            m.Not(m.Never),
+            m.Not(m.Union()),
             m.Any(),
             id="neg_never",
         ),
         pytest.param(
-            m.Union(A, m.Never),
+            m.Union(A, m.Union()),
             A,
             id="union_with_never",
         ),
@@ -75,7 +75,7 @@ Bool = m.Class(m.Name("builtins->bool"), (), {})
         ),
         pytest.param(
             m.Union(),
-            m.Never,
+            m.Union(),
             id="empty_union",
         ),
         pytest.param(

@@ -171,7 +171,7 @@ def canonicalize(registry: m.Registry, t: m.MetaType) -> m.MetaType:
             # ~(A & B) -> ~A | ~B
             return f(m.Union(*(f(m.Not(u)) for u in u.ts)))
         if isinstance(u, m.Any):
-            return m.Never  # ~Any = Never
+            return m.Union()  # ~Any = Never
         if isinstance(u, m.Class):
             return m.Not(u)
         return m.Not(u)
