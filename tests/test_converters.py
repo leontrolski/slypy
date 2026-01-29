@@ -262,7 +262,6 @@ def test_generic() -> None:
                 name="T",
                 at=m.Name("brr"),
                 bound=m.Name("builtins->int"),
-                variance=m.Variance.INVARIANT,
             ),
         ),
     )
@@ -274,7 +273,6 @@ def test_generic() -> None:
                 name="T",
                 at=m.Name("brr"),
                 bound=m.Name("builtins->int"),
-                variance=m.Variance.INFER,
             ),
         ),
     )
@@ -294,7 +292,6 @@ def test_generic() -> None:
                     m.Name("builtins->int"),
                     m.Name("builtins->float"),
                 ),
-                variance=m.Variance.INVARIANT,
             ),
         ),
     )
@@ -306,7 +303,6 @@ def test_generic() -> None:
                 name="T",
                 at=m.Name("brr"),
                 bound=m.Name("builtins->int"),
-                variance=m.Variance.INFER,
             ),
         ),
     )
@@ -330,7 +326,6 @@ def test_generic() -> None:
                 name="T",
                 at=m.Name("test_converters->MyGeneric"),
                 bound=m.Name("builtins->int"),
-                variance=m.Variance.INVARIANT,
             ),
         },
         (
@@ -338,7 +333,6 @@ def test_generic() -> None:
                 name="T",
                 at=m.Name("test_converters->MyGeneric"),
                 bound=m.Name("builtins->int"),
-                variance=m.Variance.INVARIANT,
             ),
         ),
     )
@@ -367,7 +361,6 @@ def test_generic_functions() -> None:
                     name="T",
                     at=m.Name("test_converters->f_with_generic"),
                     bound=m.Name("builtins->int"),
-                    variance=m.Variance.INVARIANT,
                 ),
             ),
         ),
@@ -375,7 +368,6 @@ def test_generic_functions() -> None:
             name="T",
             at=m.Name("test_converters->f_with_generic"),
             bound=m.Name("builtins->int"),
-            variance=m.Variance.INVARIANT,
         ),
     )
 
@@ -390,7 +382,6 @@ def test_generic_functions() -> None:
                     name="V",
                     at=m.Name("test_converters->f_with_generic_new_style"),
                     bound=m.Any(),
-                    variance=m.Variance.INFER,
                 ),
             ),
         ),
@@ -399,7 +390,6 @@ def test_generic_functions() -> None:
                 name="V",
                 at=m.Name("test_converters->f_with_generic_new_style"),
                 bound=m.Any(),
-                variance=m.Variance.INFER,
             )
         ),
     )
@@ -438,7 +428,6 @@ def test_generic_with_methods() -> None:
                                 name="T",
                                 at=m.Name("test_converters->MyGenericWithMethods"),
                                 bound=m.Name("builtins->int"),
-                                variance=m.Variance.INVARIANT,
                             ),
                         ),
                     ),
@@ -460,7 +449,6 @@ def test_generic_with_methods() -> None:
                                 name="U",
                                 at=m.Name("test_converters->MyGenericWithMethods.g"),
                                 bound=m.Any(),
-                                variance=m.Variance.INVARIANT,
                             ),
                         ),
                     ),
@@ -471,7 +459,6 @@ def test_generic_with_methods() -> None:
                                 name="U",
                                 at=m.Name("test_converters->MyGenericWithMethods.g"),
                                 bound=m.Any(),
-                                variance=m.Variance.INVARIANT,
                             ),
                         ),
                     ),
@@ -483,7 +470,6 @@ def test_generic_with_methods() -> None:
                 name="T",
                 at=m.Name("test_converters->MyGenericWithMethods"),
                 bound=m.Name("builtins->int"),
-                variance=m.Variance.INVARIANT,
             ),
         ),
     )

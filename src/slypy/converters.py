@@ -34,7 +34,7 @@ TYPING_ATOMS = {
     typing.Any: m.Any,
     typing.AnyStr: None,
     typing.LiteralString: None,
-    typing.Never: None,
+    typing.Never: m.Union.make,
     typing.NoReturn: None,
     typing.Self: m.Self,
     typing.TypeAlias: None,
@@ -234,13 +234,7 @@ def convert_type_var(r: m.Registry, s: Scope, t: TypeVar) -> m.TypeVar:
     if s.at is None:
         raise errors.SlyPyError("No name to attach TypeVar to")
 
-    variance = m.Variance.INVARIANT
-    if t.__covariant__:
-        variance = m.Variance.COVARIANT
-    if t.__contravariant__:
-        variance = m.Variance.CONTRAVARIANT
-    if t.__infer_variance__:
-        variance = m.Variance.INFER
+    # Note for t.__covariant__, t.__contravariant__, we pretend always t.__infer_variance__
     bound: m.MetaType | tuple[m.MetaType, ...] = m.Any()
     if t.__bound__ is not None:
         bound = convert_and_add(r, s, t.__bound__)
@@ -250,7 +244,6 @@ def convert_type_var(r: m.Registry, s: Scope, t: TypeVar) -> m.TypeVar:
         name=name,
         at=s.at,
         bound=bound,
-        variance=variance,
     )
 
 

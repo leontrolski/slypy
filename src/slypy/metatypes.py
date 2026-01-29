@@ -128,25 +128,12 @@ class Fn(_WithPosition):
     returns: MetaType
 
 
-class Variance(helpers.Enum):
-    INVARIANT = "INVARIANT"
-    COVARIANT = "COVARIANT"
-    CONTRAVARIANT = "CONTRAVARIANT"
-    INFER = "INFER"
-
-    def check_inferred(self) -> typing.Literal[Variance.INVARIANT, Variance.COVARIANT, Variance.CONTRAVARIANT]:
-        if self is Variance.INFER:
-            raise errors.SlyPyError("Variance not inferred yet")
-        return self
-
-
 @dataclass(frozen=True)
 class TypeVar(_WithPosition):
     name: str
     at: Name
     # We set to `Any` for `bound=None` and `tuple(...)` for `constraints=...`
     bound: MetaType | tuple[MetaType, ...]
-    variance: Variance
 
 
 @dataclass(frozen=True)
@@ -345,7 +332,6 @@ def walk(t: MetaType, f: typing.Callable[[MetaType], MetaType]) -> MetaType:
             name=t.name,
             at=t.at,
             bound=tuple(walk(b, f) for b in t.bound) if isinstance(t.bound, tuple) else walk(t.bound, f),
-            variance=t.variance,
             position=t.position,
         )
     elif isinstance(t, Bound):
