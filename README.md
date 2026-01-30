@@ -7,8 +7,8 @@
 
 # TODO - required for MVP
 
-- Handle parent classes.
-- Add end to end `issubtype` tests for everything.
+- Handle parent classes/generics in `issubtype`.
+- I'm not happy with `converters.Scope`, see below.
 - Work through `Unsupported`, `Passthrough`.
 - Infer variance.
 - Replace most `raise errors.` with `return errors.`

@@ -57,6 +57,13 @@ class MyClass:
     def static_method(c: int) -> str: ...  # type: ignore
 
 
+def test_typeshed() -> None:
+    r = m.Registry()
+    s = converters.Scope()
+    name = converters.convert_and_add(r, s, builtins.int)
+    assert name == m.Name("builtins->int")
+
+
 def test_function() -> None:
     r = m.Registry()
     s = converters.Scope()
@@ -112,8 +119,8 @@ def test_cls() -> None:
             "recursive": m.Name("test_converters->Recursive"),
             "literal": m.Union.make(m.Literal.make("one"), m.Literal.make("two")),
             "literal_enum": m.Union.make(
-                m.Literal.make(m.EnumValue(converters.to_name(MyEnum), "A", "a")),
-                m.Literal.make(m.EnumValue(converters.to_name(MyEnum), "B", "b")),
+                m.Literal.make(m.EnumValue(converters.get_name(MyEnum), "A", "a")),
+                m.Literal.make(m.EnumValue(converters.get_name(MyEnum), "B", "b")),
             ),
             "union_array": m.Bound(
                 m.Name("builtins->list"),
@@ -144,10 +151,10 @@ def test_cls() -> None:
                         m.Parameter(
                             kind=m.ParameterKind.POSITIONAL_OR_KEYWORD,
                             name="a",
-                            t=converters.to_name(builtins.int),
+                            t=converters.get_name(builtins.int),
                         ),
                     ),
-                    returns=converters.to_name(builtins.str),
+                    returns=converters.get_name(builtins.str),
                 )
             ),
             "class_method": m.ClassVar(
@@ -163,7 +170,7 @@ def test_cls() -> None:
                             m.Parameter(
                                 kind=m.ParameterKind.POSITIONAL_OR_KEYWORD,
                                 name="b",
-                                t=converters.to_name(builtins.int),
+                                t=converters.get_name(builtins.int),
                             ),
                         ),
                         returns=m.Self(),
@@ -176,10 +183,10 @@ def test_cls() -> None:
                     m.Parameter(
                         kind=m.ParameterKind.POSITIONAL_OR_KEYWORD,
                         name="c",
-                        t=converters.to_name(builtins.int),
+                        t=converters.get_name(builtins.int),
                     ),
                 ),
-                returns=converters.to_name(builtins.str),
+                returns=converters.get_name(builtins.str),
             ),
         },
     )
@@ -190,11 +197,11 @@ def test_cls() -> None:
         (m.Name("builtins->object"),),
         {
             "children": m.Bound(
-                converters.to_name(list),
+                converters.get_name(list),
                 (m.Name("test_converters->Recursive"),),
             ),
-            "parent": m.Union.make(m.Name("test_converters->Recursive"), converters.to_name(type(None))),
-            "z": converters.to_name(int),
+            "parent": m.Union.make(m.Name("test_converters->Recursive"), converters.get_name(type(None))),
+            "z": converters.get_name(int),
         },
     )
 

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import assert_never
 from slypy import canonicalize, metatypes as m
 
-Unsupported = m.Type | m.ClassVar | m.TypeVar | m.Bound | m.Tuple | m.Not | m.Intersection | m.Self | m.ReadOnly
+Unsupported = m.Type | m.ClassVar | m.TypeVar | m.Tuple | m.Not | m.Intersection | m.Self | m.ReadOnly
 
 
 @dataclass
@@ -15,125 +15,191 @@ class NotIsSubType:
     because: list[NotIsSubType] = field(default_factory=list)
 
 
-# TODO: some caching + think about how often to `canonicalize`
-def issubtype(registry: m.Registry, a: m.MetaType, b: m.MetaType) -> NotIsSubType | None:
-    a, b = canonicalize.canonicalize(registry, a), canonicalize.canonicalize(registry, b)
+# TODO: some caching (readonly registry?) + think about how often to `canonicalize`
+def issubtype(r: m.Registry, a: m.MetaType, b: m.MetaType) -> NotIsSubType | None:
+    a, b = canonicalize.canonicalize(r, a), canonicalize.canonicalize(r, b)
+    if isinstance(b, m.Name):
+        return issubtype(r, a, r.get(b))
+    if isinstance(a, m.Name):
+        return issubtype(r, r.get(a), b)
+    if isinstance(b, m.Bound):
+        return issubtype(r, a, bind(r, b))
+    if isinstance(a, m.Bound):
+        return issubtype(r, bind(r, a), b)
 
-    def _issubtype(a: m.MetaType, b: m.MetaType) -> NotIsSubType | None:
-        if isinstance(a, m.Intersection) and a.is_any():
-            return None
-        if isinstance(b, m.Intersection) and b.is_any():
-            return None
-        if isinstance(a, Unsupported) or isinstance(b, Unsupported):
-            raise NotImplementedError()
+    if isinstance(b, m.Intersection) and b.is_any():
+        return None
+    if isinstance(a, m.Intersection) and a.is_any():
+        return None
+    if isinstance(a, Unsupported) or isinstance(b, Unsupported):
+        raise NotImplementedError()
 
-        if isinstance(a, m.Name):
-            return f(registry.get(a), b)
-        if isinstance(b, m.Name):
-            return f(a, registry.get(b))
-        if isinstance(a, m.Unknown):
-            return NotIsSubType(a, b, "{a} is Unknown")
-        if isinstance(b, m.Unknown):
-            return NotIsSubType(a, b, "{b} is Unknown")
-        if isinstance(a, m.Error):
-            return NotIsSubType(a, b, "{a} is an Error")
-        if isinstance(b, m.Error):
-            return NotIsSubType(a, b, "{b} is an Error")
+    if isinstance(b, m.Unknown):
+        return NotIsSubType(a, b, "{b} is Unknown")
+    if isinstance(a, m.Unknown):
+        return NotIsSubType(a, b, "{a} is Unknown")
+    if isinstance(b, m.Error):
+        return NotIsSubType(a, b, "{b} is an Error")
+    if isinstance(a, m.Error):
+        return NotIsSubType(a, b, "{a} is an Error")
 
-        # TODO: handle truthiness
-        # if isinstance(a, m._AlwaysTruthy | m._AlwaysFalsy) or isinstance(b, m._AlwaysTruthy | m._AlwaysFalsy):
-        #     raise NotImplementedError()  # TODO: handle Literal[0] etc. see BOOL_MAP and ty tests with `int` gotchas
+    if isinstance(a, m.Union):
+        return issubtype_a_union(r, a, b)
+    if isinstance(b, m.Union):
+        return issubtype_b_union(r, a, b)
 
-        if isinstance(a, m.Union):
-            # return all(f(x, b) for x in a.ts)
-            inner = [f(x, b) for x in a.ts]
-            because = [x for x in inner if x is not None]
-            if because:
-                return NotIsSubType(a, b, "union {a} is not a subtype of {b}", because)
-            return None
-        if isinstance(b, m.Union):
-            # return any(f(a, y) for y in b.ts)
-            inner = [f(a, y) for y in b.ts]
-            because = [x for x in inner if x is not None]
-            if len(inner) == len(because):
-                return NotIsSubType(a, b, "{a} is not a subtype of union {b}", because)
-            return None
+    if isinstance(b, m.Literal):
+        return issubtype_b_literal(r, a, b)
+    if isinstance(a, m.Literal):
+        return issubtype_a_literal(r, a, b)
 
-        if isinstance(b, m.Literal):
-            if a == b:
-                return None
-            return NotIsSubType(a, b, "{a} != {b}")
+    if isinstance(b, m.Class):
+        return issubtype_b_class(r, a, b)
+    if isinstance(a, m.Class):
+        return issubtype_a_class(r, a, b)
 
-        if isinstance(a, m.Literal):
-            next_ = f(a.t, b)
-            if next_ is None:
-                return None
-            because = [next_]
-            return NotIsSubType(a, b, "type of {a} is not a subtype of {b}", because)
+    if isinstance(b, m.Protocol):
+        return issubtype_b_protocol(r, a, b)
+    if isinstance(a, m.Protocol):
+        return issubtype_a_protocol(r, a, b)
 
-        if isinstance(b, m.Class):
-            # TODO: handle generics, subclassing
-            if isinstance(a, m.Class) and a.name == b.name:
-                return None
-            return NotIsSubType(a, b, "{a} is not a subtype of class {b}")
-        if isinstance(a, m.Class):
-            if isinstance(b, m.Class) and a.name == b.name:
-                return None
-            return NotIsSubType(a, b, "class {a} is not a subtype of {b}")
+    # I'm not totally convinced this is correct
+    if isinstance(b, m.Method):
+        return issubtype(r, a, b.as_fn())
+    if isinstance(a, m.Method):
+        return issubtype(r, a.as_fn(), b)
 
-        if isinstance(b, m.Protocol):
-            if isinstance(a, m.Fn) and (call := b.as_call()):
-                return f(a, call)
-            if isinstance(a, m.Protocol):
-                because = list[NotIsSubType]()
-                for k, u in b.ts.items():
-                    # TODO: implement parent classes
-                    next_ = f(u, a.ts.get(k, m.Unknown()))
-                    if isinstance(next_, NotIsSubType):
-                        because.append(next_)
-                if because:
-                    return NotIsSubType(a, b, "{a} does not conform to protocol {b}", because)
-                return None
-            raise NotImplementedError()
-        if isinstance(a, m.Protocol):
-            if isinstance(b, m.Fn) and (call := a.as_call()):
-                return f(call, b)
-            raise NotImplementedError()
+    if isinstance(a, m.Fn):
+        return issubtype_a_fn(r, a, b)
+    if isinstance(b, m.Fn):
+        return NotIsSubType(a, b, "cannot compare function to non-function")
 
-        # I'm not totally convinced this is correct
-        if isinstance(b, m.Method):
-            return f(a, b.as_fn())
-        if isinstance(a, m.Method):
-            return f(a.as_fn(), b)
+    # TODO: handle truthiness like `ty`
+    # if isinstance(a, m._AlwaysTruthy | m._AlwaysFalsy) or isinstance(b, m._AlwaysTruthy | m._AlwaysFalsy):
+    #     raise NotImplementedError()
+    assert_never(a)
+    assert_never(b)
 
-        if isinstance(a, m.Fn):
-            if not isinstance(b, m.Fn):
-                return NotIsSubType(a, b, "cannot compare function to non-function")
 
-            returns_error = f(a.returns, b.returns)  # covariant
-            if returns_error is not None:
-                return NotIsSubType(a, b, "return type mismatch", [returns_error])
+def issubtype_b_union(r: m.Registry, a: m.MetaType, b: m.Union) -> NotIsSubType | None:
+    # return any(issubtype(r, a, y) for y in b.ts)
+    inner = [issubtype(r, a, y) for y in b.ts]
+    because = [x for x in inner if x is not None]
+    if len(inner) == len(because):
+        return NotIsSubType(a, b, "{a} is not a subtype of union {b}", because)
+    return None
 
-            aligned = align_parameters(a, b)
-            if isinstance(aligned, NotIsSubType):
-                return aligned
-            param_errors = []
-            for p_a, p_b in aligned:
-                param_error = f(p_b.t, p_a.t)  # contravariant
-                if param_error:
-                    param_errors.append(param_error)
-            if param_errors:
-                return NotIsSubType(a, b, "parameter type mismatches", param_errors)
 
-            return None
-        if isinstance(b, m.Fn):
-            return NotIsSubType(a, b, "cannot compare function to non-function")
+def bind(r: m.Registry, t: m.Bound) -> m.MetaType:
+    u = t.t
+    if isinstance(u, m.Name):
+        u = r.get(u)
 
-        assert_never(a)
-        assert_never(b)
+    if isinstance(u, m.Class | m.Protocol):
+        map = dict(zip(u.type_vars, t.bound))
 
-    f = _issubtype
-    return f(a, b)
+        def f(t: m.MetaType) -> m.MetaType:
+            if isinstance(t, m.TypeVar) and t in map:
+                return map[t]
+            return t
+
+        return m.walk(u.without_type_vars(), f)
+
+    raise NotImplementedError()
+
+
+def issubtype_a_union(r: m.Registry, a: m.Union, b: m.MetaType) -> NotIsSubType | None:
+    # return all(issubtype(r, x, b) for x in a.ts)
+    inner = [issubtype(r, x, b) for x in a.ts]
+    because = [x for x in inner if x is not None]
+    if because:
+        return NotIsSubType(a, b, "union {a} is not a subtype of {b}", because)
+    return None
+
+
+def issubtype_b_literal(r: m.Registry, a: m.MetaType, b: m.Literal) -> NotIsSubType | None:
+    if a == b:
+        return None
+    return NotIsSubType(a, b, "{a} != {b}")
+
+
+def issubtype_a_literal(r: m.Registry, a: m.Literal, b: m.MetaType) -> NotIsSubType | None:
+    next_ = issubtype(r, a.t, b)
+    if next_ is None:
+        return None
+    because = [next_]
+    return NotIsSubType(a, b, "type of {a} is not a subtype of {b}", because)
+
+
+def issubtype_b_class(r: m.Registry, a: m.MetaType, b: m.Class) -> NotIsSubType | None:
+    # TODO: handle generics, subclassing
+    if isinstance(a, m.Class) and a.name == b.name:
+        return None
+    return NotIsSubType(a, b, "{a} is not a subtype of class {b}")
+
+
+def issubtype_a_class(r: m.Registry, a: m.Class, b: m.MetaType) -> NotIsSubType | None:
+    if isinstance(b, m.Class) and a.name == b.name:
+        return None
+    return NotIsSubType(a, b, "class {a} is not a subtype of {b}")
+
+
+def issubtype_b_protocol(r: m.Registry, a: m.MetaType, b: m.Protocol) -> NotIsSubType | None:
+    if isinstance(a, m.Fn) and (call := b.as_call()):
+        return issubtype(r, a, call)
+    if isinstance(a, m.Protocol):
+        b_ts = all_ts(r, b)
+        a_ts = all_ts(r, a)
+        because = list[NotIsSubType]()
+        for k, u in b_ts.items():
+            next_ = issubtype(r, u, a_ts.get(k, m.Unknown()))
+            if isinstance(next_, NotIsSubType):
+                because.append(next_)
+        if because:
+            return NotIsSubType(a, b, "{a} does not conform to protocol {b}", because)
+        return None
+    raise NotImplementedError()
+
+
+def issubtype_a_protocol(r: m.Registry, a: m.Protocol, b: m.MetaType) -> NotIsSubType | None:
+    if isinstance(b, m.Fn) and (call := a.as_call()):
+        return issubtype(r, call, b)
+    raise NotImplementedError()
+
+
+def issubtype_a_fn(r: m.Registry, a: m.Fn, b: m.MetaType) -> NotIsSubType | None:
+    if not isinstance(b, m.Fn):
+        return NotIsSubType(a, b, "cannot compare function to non-function")
+
+    returns_error = issubtype(r, a.returns, b.returns)  # covariant
+    if returns_error is not None:
+        return NotIsSubType(a, b, "return type mismatch", [returns_error])
+
+    aligned = align_parameters(a, b)
+    if isinstance(aligned, NotIsSubType):
+        return aligned
+    param_errors = []
+    for p_a, p_b in aligned:
+        param_error = issubtype(r, p_b.t, p_a.t)  # contravariant
+        if param_error:
+            param_errors.append(param_error)
+    if param_errors:
+        return NotIsSubType(a, b, "parameter type mismatches", param_errors)
+
+    return None
+
+
+def all_ts(r: m.Registry, t: m.MetaType) -> dict[str, m.MetaType]:
+    if isinstance(t, m.Name):
+        return all_ts(r, r.get(t))
+    if isinstance(t, m.Bound):
+        return all_ts(r, bind(r, t))
+    if isinstance(t, m.Class | m.Protocol):
+        out = dict[str, m.MetaType]()
+        for base in t.bases:
+            out |= all_ts(r, base)
+        return out | t.ts
+    raise NotImplementedError()
 
 
 def align_parameters(a: m.Fn, b: m.Fn) -> list[tuple[m.Parameter, m.Parameter]] | NotIsSubType:

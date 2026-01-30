@@ -5,11 +5,12 @@ from dataclasses import dataclass, field, replace
 import enum
 import functools
 import inspect
+import sys
 import types
 import typing
 from typing import Any, Callable, TypeVar
 from slypy import errors, metatypes as m
-from slypy.typeshed import builtins
+from slypy import typeshed
 
 F = typing.TypeVar("F", bound=Callable[..., Any])
 cache: Callable[[F], F] = functools.cache  # type: ignore
@@ -80,7 +81,11 @@ TYPING_DECORATORS = (
 )
 
 
-def convert_and_add(r: m.Registry, s: Scope, t: Any | type[inspect._empty]) -> m.MetaType:
+def convert_and_add(
+    r: m.Registry,
+    s: Scope,
+    t: Any | type[inspect._empty],
+) -> m.MetaType:
     if t is inspect._empty:
         return m.Unknown()
 
@@ -96,7 +101,7 @@ def convert_and_add(r: m.Registry, s: Scope, t: Any | type[inspect._empty]) -> m
         raise NotImplementedError()
 
     if isinstance(t, type):
-        name = to_name(t)
+        name = get_name(t)
         if name not in r:
             r.add(name, name)
             meta_cls = convert_class(r, s, t)
@@ -104,7 +109,7 @@ def convert_and_add(r: m.Registry, s: Scope, t: Any | type[inspect._empty]) -> m
         return name
 
     if isinstance(t, types.FunctionType):
-        name = to_name(t)
+        name = get_name(t)
         if name not in r:
             r.add(name, name)
             meta_fn = convert_function(r, s, t, name)
@@ -157,13 +162,13 @@ def convert_with_args(r: m.Registry, s: Scope, t: Any) -> m.MetaType:
 
 def convert_class(r: m.Registry, s: Scope, t: type[Any]) -> m.Class | m.Protocol:
     assert isinstance(t, type)
-    name = to_name(t)
+    name = get_name(t)
 
     bases_plus = get_bases(r, s.with_at(name), t)
     s = s.with_type_vars(bases_plus.type_vars)
 
     ts = dict[str, m.MetaType]()
-    for k, v in typing.get_type_hints(t).items():
+    for k, v in get_type_hints(t).items():
         ts[k] = convert_and_add(r, s, v)
     for k, [method_kind, method] in methods(t).items():
         method_name = m.Name(f"{name.absolute_name}.{k}")
@@ -226,7 +231,7 @@ def get_bases(r: m.Registry, s: Scope, t: type[Any]) -> Bases:
             raw_bases.append(u)
 
     bases = tuple(convert_and_add(r, s, base) for base in raw_bases)
-    if not bases:
+    if not bases and get_name(t) != m.Name("builtins->object"):
         bases = (m.Name("builtins->object"),)
     type_vars = tuple(convert_type_var(r, s, type_var) for type_var in raw_type_vars)
     return Bases(bases, is_protocol, type_vars)
@@ -260,12 +265,15 @@ PARAMETER_KIND_MAP = {
     inspect.Parameter.VAR_KEYWORD: m.ParameterKind.VAR_KEYWORD,
 }
 
+TYPESHED_PREFIX = typeshed.__package__ + "."
+
 
 @cache
-def to_name(t: Any) -> m.Name:
+def get_name(t: Any) -> m.Name:
     module = t.__module__
-    if module == builtins.__name__:
-        module = "builtins"
+    assert isinstance(module, str)
+    if module.startswith(TYPESHED_PREFIX):
+        module = module[len(TYPESHED_PREFIX) :]
     return m.Name(f"{module}->{t.__name__}")
 
 
@@ -295,3 +303,18 @@ def methods(t: type[Any]) -> dict[str, tuple[MethodKind, Function]]:
         out[k] = pair
 
     return out
+
+
+# Trimmed typing.get_type_hints() that doesn't traverse MRO
+def get_type_hints(obj: type[Any]) -> dict[str, Any]:
+    hints = dict[str, type[Any]]()
+    base_locals = getattr(sys.modules.get(obj.__module__, None), "__dict__", {})
+    base_globals = dict(vars(obj))
+    for name, value in obj.__dict__.get("__annotations__", {}).items():
+        if value is None:
+            value = type(None)
+        if isinstance(value, str):
+            value = typing.ForwardRef(value, is_argument=False, is_class=True)
+        value = typing._eval_type(value, base_globals, base_locals, obj.__type_params__)  # type: ignore
+        hints[name] = value
+    return {k: typing._strip_annotations(t) for k, t in hints.items()}  # type: ignore

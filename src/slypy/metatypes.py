@@ -25,7 +25,7 @@ class Registry:
 @dataclass(frozen=True)
 class _WithPosition:
     _: KW_ONLY
-    position: helpers.Position | None = None
+    position: helpers.Position | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -124,12 +124,29 @@ class Parameter(_WithPosition):
     t: MetaType
     has_default: bool = False
 
+    def __repr__(self) -> str:
+        t = repr(self.t)
+        if self.kind is ParameterKind.VAR_POSITIONAL:
+            t = f"*{t}"
+        if self.kind is ParameterKind.VAR_KEYWORD:
+            t = f"**{t}"
+        name = ""
+        if self.name is not None:
+            name = f"{self.name}: "
+        return f"{name}{t}"
+
 
 @dataclass(frozen=True, kw_only=True)
 class Fn(_WithPosition):
     name: Name | None = None
     parameters: tuple[Parameter, ...]
     returns: MetaType
+
+    def __repr__(self) -> str:
+        parameters = ", ".join(repr(p) for p in self.parameters)
+        if self.name is None:
+            return f"Callable[[{parameters}], {repr(self.returns)}]"
+        return f"def {self.name.value}({parameters}) -> {repr(self.returns)}"
 
 
 @dataclass(frozen=True)
@@ -181,6 +198,9 @@ class _Class:
 
     position: helpers.Position | None = None
 
+    def without_type_vars(self) -> typing.Self:
+        return replace(self, type_vars=())
+
     # We assume we never mutate .ts
     def __post_init__(self) -> None:
         as_tuple = (
@@ -194,20 +214,23 @@ class _Class:
     def __hash__(self) -> int:
         return self._hash
 
-    def __repr__(self) -> str:
-        return repr(self.name)
-
 
 @dataclass
 class Class(_Class):
     def __hash__(self) -> int:
         return super().__hash__()
 
+    def __repr__(self) -> str:
+        return repr(self.name)
+
 
 @dataclass
 class Protocol(_Class):
     def __hash__(self) -> int:
         return super().__hash__()
+
+    def __repr__(self) -> str:
+        return f"{repr(self.name)}(Protocol)"
 
     def as_call(self) -> Fn | None:
         if (call := self.ts.get("__call__")) and isinstance(call, Method):
@@ -227,8 +250,8 @@ class Name(_WithPosition):
         return self.absolute_name.partition("->")[0]
 
     @property
-    def value(self) -> str | None:
-        return self.absolute_name.partition("->")[2] or None
+    def value(self) -> str:
+        return self.absolute_name.partition("->")[2] or "<no-name>"
 
 
 @dataclass(frozen=True)
@@ -240,24 +263,24 @@ class Self(_WithPosition): ...
 
 
 MetaType = (
-    Unknown  #
-    | Self
-    | Literal
-    | Error
-    | Tuple
+    Name  #
     | Class
     | Protocol
+    | Literal
+    | Tuple
     | Fn
-    | Union
-    | Intersection
-    | Not
-    | Type
-    | ClassVar
     | Method
+    | ClassVar
     | TypeVar
     | Bound
     | ReadOnly
-    | Name
+    | Type
+    | Union
+    | Intersection
+    | Not
+    | Self
+    | Unknown  #
+    | Error
 )
 
 

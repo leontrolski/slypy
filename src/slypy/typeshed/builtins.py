@@ -1,3 +1,7 @@
+# TODO: once everything is working, fill this in
+from slypy.typeshed import typing
+
+
 class bool:
     pass
 
@@ -15,7 +19,10 @@ class str:
     def __eq__(self, other: str) -> bool: ...  # type: ignore
 
 
-# def isinstance(value: typing.Any, cls: typing.Any) -> typing.Any: ...
+class list[T]:
+    def __iter__(self) -> typing.Iterator[T]: ...  # type: ignore
+
+
 # __name__
 # __doc__
 # __package__
