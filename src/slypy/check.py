@@ -1,48 +1,23 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from functools import partial
-from typing import Literal, assert_never
-from slypy import metatypes as m
+from typing import assert_never
+from slypy import canonicalize, metatypes as m
 
-Unsupported = (
-    m.Protocol  #
-    | m.Fn
-    | m.Type
-    | m.ClassVar
-    | m.Method
-    | m.TypeVar
-    | m.Bound
-    | m.Tuple
-    | m.Not
-    | m.Intersection
-    | m.Self
-    | m.ReadOnly
-)
+Unsupported = m.Type | m.ClassVar | m.TypeVar | m.Bound | m.Tuple | m.Not | m.Intersection | m.Self | m.ReadOnly
 
 
 @dataclass
 class NotIsSubType:
     a: m.MetaType
     b: m.MetaType
-    message: Literal[
-        "{a} is Unknown",
-        "{b} is Unknown",
-        "{a} is an Error",
-        "{b} is an Error",
-        "union {a} is not a subtype of {b}",
-        "{a} is not a subtype of union {b}",
-        "{a} != {b}",
-        "type of {a} is not a subtype of {b}",
-        "{a} is not a subtype of class {b}",
-        "class {a} is not a subtype of {b}",
-    ]
+    message: str
     because: list[NotIsSubType] = field(default_factory=list)
 
 
-# TODO: some caching
+# TODO: some caching + think about how often to `canonicalize`
 def issubtype(registry: m.Registry, a: m.MetaType, b: m.MetaType) -> NotIsSubType | None:
-    a, b = canonicalize(registry, a), canonicalize(registry, b)
+    a, b = canonicalize.canonicalize(registry, a), canonicalize.canonicalize(registry, b)
 
     def _issubtype(a: m.MetaType, b: m.MetaType) -> NotIsSubType | None:
         if isinstance(a, m.Intersection) and a.is_any():
@@ -106,6 +81,54 @@ def issubtype(registry: m.Registry, a: m.MetaType, b: m.MetaType) -> NotIsSubTyp
                 return None
             return NotIsSubType(a, b, "class {a} is not a subtype of {b}")
 
+        if isinstance(b, m.Protocol):
+            if isinstance(a, m.Fn) and (call := b.as_call()):
+                return f(a, call)
+            if isinstance(a, m.Protocol):
+                because = list[NotIsSubType]()
+                for k, u in b.ts.items():
+                    # TODO: implement parent classes
+                    next_ = f(u, a.ts.get(k, m.Unknown()))
+                    if isinstance(next_, NotIsSubType):
+                        because.append(next_)
+                if because:
+                    return NotIsSubType(a, b, "{a} does not conform to protocol {b}", because)
+                return None
+            raise NotImplementedError()
+        if isinstance(a, m.Protocol):
+            if isinstance(b, m.Fn) and (call := a.as_call()):
+                return f(call, b)
+            raise NotImplementedError()
+
+        # I'm not totally convinced this is correct
+        if isinstance(b, m.Method):
+            return f(a, b.as_fn())
+        if isinstance(a, m.Method):
+            return f(a.as_fn(), b)
+
+        if isinstance(a, m.Fn):
+            if not isinstance(b, m.Fn):
+                return NotIsSubType(a, b, "cannot compare function to non-function")
+
+            returns_error = f(a.returns, b.returns)  # covariant
+            if returns_error is not None:
+                return NotIsSubType(a, b, "return type mismatch", [returns_error])
+
+            aligned = align_parameters(a, b)
+            if isinstance(aligned, NotIsSubType):
+                return aligned
+            param_errors = []
+            for p_a, p_b in aligned:
+                param_error = f(p_b.t, p_a.t)  # contravariant
+                if param_error:
+                    param_errors.append(param_error)
+            if param_errors:
+                return NotIsSubType(a, b, "parameter type mismatches", param_errors)
+
+            return None
+        if isinstance(b, m.Fn):
+            return NotIsSubType(a, b, "cannot compare function to non-function")
+
         assert_never(a)
         assert_never(b)
 
@@ -113,111 +136,73 @@ def issubtype(registry: m.Registry, a: m.MetaType, b: m.MetaType) -> NotIsSubTyp
     return f(a, b)
 
 
-Passthrough = (
-    m.Literal  #
-    | m.Error
-    | m.Class
-    | m.ClassVar
-    | m.Method
-    | m.Protocol
-    | m.Type
-    | m.Fn
-    | m.TypeVar
-    | m.Bound
-    | m.ReadOnly
-    | m.Unknown
-    | m.Self
-)
+def align_parameters(a: m.Fn, b: m.Fn) -> list[tuple[m.Parameter, m.Parameter]] | NotIsSubType:
+    a_var_positional: m.Parameter | None = None
+    a_var_keyword: m.Parameter | None = None
+    a_positional = list[m.Parameter]()
+    a_keyword = dict[str, m.Parameter]()
 
+    b_var_positional: m.Parameter | None = None
+    b_var_keyword: m.Parameter | None = None
+    b_positional = list[m.Parameter]()
+    b_positional_exclude_has_default = list[m.Parameter]()
+    b_keyword = dict[str, m.Parameter]()
+    b_keyword_exclude_has_default = dict[str, m.Parameter]()
 
-def canonicalize(registry: m.Registry, t: m.MetaType) -> m.MetaType:
-    """Canonicalize types.
+    for p in a.parameters:
+        if p.kind is m.ParameterKind.VAR_POSITIONAL:
+            a_var_positional = p
+        if p.kind is m.ParameterKind.VAR_KEYWORD:
+            a_var_keyword = p
+        if p.kind in {m.ParameterKind.POSITIONAL_ONLY, m.ParameterKind.POSITIONAL_OR_KEYWORD}:
+            a_positional.append(p)
+        if p.name is not None and p.kind in {m.ParameterKind.KEYWORD_ONLY, m.ParameterKind.POSITIONAL_OR_KEYWORD}:
+            a_keyword[p.name] = p
 
-    Any concrete MetaType can be rewritten as:
+    for p in b.parameters:
+        if p.kind is m.ParameterKind.VAR_POSITIONAL:
+            b_var_positional = p
+        if p.kind is m.ParameterKind.VAR_KEYWORD:
+            b_var_keyword = p
+        if p.kind in {m.ParameterKind.POSITIONAL_ONLY, m.ParameterKind.POSITIONAL_OR_KEYWORD}:
+            b_positional.append(p)
+            if not p.has_default:
+                b_positional_exclude_has_default.append(p)
+        if p.name is not None and p.kind in {m.ParameterKind.KEYWORD_ONLY, m.ParameterKind.POSITIONAL_OR_KEYWORD}:
+            b_keyword[p.name] = p
+            if not p.has_default:
+                b_keyword_exclude_has_default[p.name] = p
 
-        Union[
-            Intersection[...],
-            Intersection[...],
-            ...
-        ]
+    pairs = list[tuple[m.Parameter, m.Parameter]]()
 
-    with each intersection containing only base types, flattened,
-    and duplicates/subsumed types removed.
+    if len(b_positional_exclude_has_default) > len(a_positional):
+        return NotIsSubType(a, b, "{b} has too many positional parameters")
+    for i in range(len(a_positional)):
+        if i < len(b_positional):
+            pairs.append((a_positional[i], b_positional[i]))
+        elif b_var_positional:
+            pairs.append((a_positional[i], b_var_positional))
+        else:
+            return NotIsSubType(a, b, "{b} has too few positional parameters")
+    if a_var_positional:
+        if b_var_positional:
+            pairs.append((a_var_positional, b_var_positional))
+        else:
+            return NotIsSubType(a, b, "{b} doesn't handle *args")
 
-    This is the canonical Disjunctive Normal Form.
-    """
-    f = partial(canonicalize, registry)
+    if set(b_keyword_exclude_has_default) - set(a_keyword):
+        return NotIsSubType(a, b, "{b} has too many keyword parameters")
+    for k in a_keyword:
+        if k in b_keyword:
+            pairs.append((a_keyword[k], b_keyword[k]))
+        elif b_var_keyword:
+            pairs.append((a_keyword[k], b_var_keyword))
+        else:
+            return NotIsSubType(a, b, "{b} missing parameter for keyword {k}")
+    if a_var_keyword:
+        if b_var_keyword:
+            pairs.append((a_var_keyword, b_var_keyword))
+        else:
+            return NotIsSubType(a, b, "{b} doesn't handle **kwargs")
 
-    if isinstance(t, m.Name):
-        return f(registry.get(t))
-
-    if isinstance(t, Passthrough):
-        return t
-
-    if isinstance(t, m.Tuple):
-        if isinstance(t.ts, tuple):
-            return m.Tuple(tuple(f(u) for u in t.ts))
-        return m.Tuple(f(t.ts))
-
-    if isinstance(t, m.Not):
-        # Push negation inwards if possible (De Morgan)
-        u = t.t
-        if isinstance(u, m.Not):
-            # Double negation
-            return f(u.t)
-        if isinstance(u, m.Union):
-            # ~(A | B) -> ~A & ~B
-            return f(m.Intersection.make(*(f(m.Not(u)) for u in u.ts)))
-        if isinstance(u, m.Intersection):
-            # ~(A & B) -> ~A | ~B
-            return f(m.Union.make(*(f(m.Not(u)) for u in u.ts)))
-        if isinstance(u, m.Class):
-            return m.Not(u)
-        return m.Not(u)
-
-    if isinstance(t, m.Union):
-        # Flatten unions and canonicalize members
-        new_members = frozenset[m.MetaType]()
-        for u in t.ts:
-            u = f(u)
-            new_members |= u.ts if isinstance(u, m.Union) else {u}
-
-        if len(new_members) == 1:
-            return next(iter(new_members))
-        return m.Union.make(*new_members)
-
-    if isinstance(t, m.Intersection):
-        # Flatten intersections and canonicalize members
-        new_members = frozenset()
-        for u in t.ts:
-            u = f(u)
-            new_members |= (
-                u.ts  #
-                if isinstance(u, m.Intersection)
-                else {u}
-            )
-
-        # Push intersection over any union
-        for u in new_members:
-            if isinstance(u, m.Union):
-                # Found a union to distribute over
-                distributed = frozenset[m.MetaType]()
-                others = new_members - {u}
-                for v in u.ts:
-                    dist = f(m.Intersection.make(*(others | {v})))
-                    distributed |= dist.ts if isinstance(dist, m.Union) else {dist}
-                return m.Union.make(*distributed)
-
-        if len(new_members) == 1:
-            return next(iter(new_members))
-
-        # TODO: handle truthiness, generalise for Literals etc.
-        # if len(new_members) == 2:
-        #     if (truthys := new_members & set(BOOL_MAP)) and (bools := new_members - set(BOOL_MAP)):
-        #         [truthy], [bool_] = truthys, bools
-        #         if isinstance(bool_, m.Class) and bool_.absolute_name == constants.NAME_BOOL:
-        #             return BOOL_MAP[truthy]
-
-        return m.Intersection.make(*new_members)
-
-    assert_never(t)
+    return pairs

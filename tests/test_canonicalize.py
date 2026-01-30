@@ -1,4 +1,4 @@
-from slypy import check, metatypes as m
+from slypy import canonicalize, metatypes as m
 
 import pytest
 
@@ -104,5 +104,5 @@ Bool = m.Class(m.Name("builtins->bool"), (), {})
     ],
 )
 def test_canonicalize(input_type: m.MetaType, expected: m.MetaType) -> None:
-    actual = check.canonicalize(m.Registry(), input_type)
+    actual = canonicalize.canonicalize(m.Registry(), input_type)
     assert actual == expected

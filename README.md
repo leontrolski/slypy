@@ -7,6 +7,7 @@
 
 # TODO - required for MVP
 
+- Handle parent classes.
 - Add end to end `issubtype` tests for everything.
 - Work through `Unsupported`, `Passthrough`.
 - Infer variance.
@@ -14,9 +15,13 @@
 
 # TODO - nice to haves
 
-- `dataclass_transform` + `dataclass.field(...)`
 - `overload`
+- `dataclass_transform` + `dataclass.field(...)`
 - `TypedDict` + `Required` + `NotRequired` + `ReadOnly`
+- Copy tests from `ty` - not very confident about:
+    - Method Resolution Order
+    - Still not totally confident on the
+    - TypeVar scoping - I'm a bit worried about the `str` -> `TypeVar` map. What if there's `Generic[a.T, b.T]` - is that even allowed? Is the scoping remotely the same as lexical scoping? It shouldn't follow `Name`s or something.
 - `NamedTuple`
 - `TypeIs`
 - `TypeVarTuple` + `Unpack`

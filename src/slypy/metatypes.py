@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import KW_ONLY, dataclass, field
+from dataclasses import KW_ONLY, dataclass, field, replace
 import enum
 import typing
 from slypy import errors, helpers
@@ -111,9 +111,9 @@ class Error(_WithPosition):
 class ParameterKind(helpers.Enum):
     POSITIONAL_ONLY = 1
     POSITIONAL_OR_KEYWORD = 2
-    VAR_POSITIONAL = 3
-    KEYWORD_ONLY = 4
-    VAR_KEYWORD = 5
+    VAR_POSITIONAL = 3  # corresponds to *args
+    KEYWORD_ONLY = 4  # those which appear after * or *args
+    VAR_KEYWORD = 5  # corresponds to **kwargs
 
 
 # see `inspect.signature`
@@ -122,12 +122,13 @@ class Parameter(_WithPosition):
     kind: ParameterKind
     name: str | None
     t: MetaType
+    has_default: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)
 class Fn(_WithPosition):
     name: Name | None = None
-    parameters: tuple[Parameter, ...] | None
+    parameters: tuple[Parameter, ...]
     returns: MetaType
 
 
@@ -163,6 +164,11 @@ class ClassVar(_WithPosition):
 @dataclass(frozen=True)
 class Method(_WithPosition):
     t: MetaType  # Should always be `Fn`
+
+    def as_fn(self) -> Fn:
+        if not isinstance(self.t, Fn):
+            raise errors.SlyPyError("Expected Fn")
+        return replace(self.t, parameters=self.t.parameters[1:])
 
 
 @dataclass
@@ -202,6 +208,11 @@ class Class(_Class):
 class Protocol(_Class):
     def __hash__(self) -> int:
         return super().__hash__()
+
+    def as_call(self) -> Fn | None:
+        if (call := self.ts.get("__call__")) and isinstance(call, Method):
+            return call.as_fn()
+        return None
 
 
 @dataclass(frozen=True)

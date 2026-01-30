@@ -144,7 +144,11 @@ def convert_with_args(r: m.Registry, s: Scope, t: Any) -> m.MetaType:
                     for param in params
                 )
                 if isinstance(params, list)
-                else None
+                # For `...` pretend `f(*_: Any, **_: Any)`
+                else (
+                    m.Parameter(kind=m.ParameterKind.VAR_POSITIONAL, name=None, t=m.Intersection.make()),
+                    m.Parameter(kind=m.ParameterKind.VAR_KEYWORD, name=None, t=m.Intersection.make()),
+                )
             )
             return m.Fn(parameters=parameters, returns=convert_and_add(r, s, return_type))
         raise NotImplementedError()
@@ -193,6 +197,7 @@ def convert_function(r: m.Registry, s: Scope, t: Function, name: m.Name | None) 
             kind=PARAMETER_KIND_MAP[sig_param.kind],
             name=sig_name,
             t=convert_and_add(r, s, sig_param.annotation),
+            has_default=sig_param.default is not inspect._empty,
         )
         parameters.append(parameter)
     returns = convert_and_add(r, s, sig.return_annotation)
