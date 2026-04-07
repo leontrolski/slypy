@@ -134,3 +134,49 @@ def test_issubtype_e2e(a: m.MetaType, b: m.MetaType, expected: bool) -> None:
     b_meta = converters.convert_and_add(r, s, b)
     actual = check.issubtype(r, a_meta, b_meta)
     assert (actual is None) == expected
+
+
+class X: ...
+
+
+class Y(int, X): ...
+
+
+class Z(Y): ...
+
+
+@pytest.mark.parametrize(
+    "a, b, expected",
+    [
+        (X, Y, False),
+        (Y, X, True),
+        (X, Z, False),
+        (Z, X, True),
+    ],
+)
+def test_issubtype_inheritance_e2e(a: m.MetaType, b: m.MetaType, expected: bool) -> None:
+    r = m.Registry()
+    s = converters.Scope()
+    a_meta = converters.convert_and_add(r, s, a)
+    b_meta = converters.convert_and_add(r, s, b)
+    actual = check.issubtype(r, a_meta, b_meta)
+    assert (actual is None) == expected
+
+
+@pytest.mark.parametrize(
+    "a, b, expected",
+    [
+        (list[int], list[int], True),
+        (list[int], list[str], False),
+    ],
+)
+def test_issubtype_generics_e2e(a: m.MetaType, b: m.MetaType, expected: bool) -> None:
+    r = m.Registry()
+    s = converters.Scope()
+    a_meta = converters.convert_and_add(r, s, a)
+    b_meta = converters.convert_and_add(r, s, b)
+    actual = check.issubtype(r, a_meta, b_meta)
+    assert (actual is None) == expected
+
+
+type[int]

@@ -20,10 +20,10 @@ type Function = Callable[..., Any] | types.FunctionType | classmethod[Any, Any, 
 
 @dataclass
 class Scope:
-    at: m.Name | None = None
+    at: m.NameClass | m.NameFn | None = None
     type_var_scope: dict[str, m.TypeVar] = field(default_factory=dict)
 
-    def with_at(self, at: m.Name) -> Scope:
+    def with_at(self, at: m.NameClass | m.NameFn) -> Scope:
         return replace(self, at=at)
 
     def with_type_vars(self, type_vars: tuple[m.TypeVar, ...]) -> Scope:
@@ -109,12 +109,11 @@ def convert_and_add(
         return name
 
     if isinstance(t, types.FunctionType):
-        name = get_name(t)
-        if name not in r:
-            r.add(name, name)
-            meta_fn = convert_function(r, s, t, name)
-            r.add(name, meta_fn)
-        return name
+        name_fn = get_name(t)
+        if name_fn not in r:
+            meta_fn = convert_function(r, s, t, name_fn)
+            r.add(name_fn, meta_fn)
+        return name_fn
 
     raise errors.SlyPyError(f"Cannot add type {t}")
 
@@ -157,7 +156,10 @@ def convert_with_args(r: m.Registry, s: Scope, t: Any) -> m.MetaType:
             )
             return m.Fn(parameters=parameters, returns=convert_and_add(r, s, return_type))
         raise NotImplementedError()
-    return m.Bound(convert_and_add(r, s, origin), tuple(convert_and_add(r, s, arg) for arg in args))
+    u = convert_and_add(r, s, origin)
+    if not isinstance(u, m.NameClass | m.Class | m.Protocol):
+        raise NotImplementedError()
+    return m.Bound(u, tuple(convert_and_add(r, s, arg) for arg in args))
 
 
 def convert_class(r: m.Registry, s: Scope, t: type[Any]) -> m.Class | m.Protocol:
@@ -171,7 +173,7 @@ def convert_class(r: m.Registry, s: Scope, t: type[Any]) -> m.Class | m.Protocol
     for k, v in get_type_hints(t).items():
         ts[k] = convert_and_add(r, s, v)
     for k, [method_kind, method] in methods(t).items():
-        method_name = m.Name(f"{name.absolute_name}.{k}")
+        method_name = m.NameFn(f"{name.absolute_name}.{k}")
         v = convert_function(r, s, method, method_name)
         if method_kind == "method":
             v = m.Method(v)
@@ -192,7 +194,7 @@ def convert_class(r: m.Registry, s: Scope, t: type[Any]) -> m.Class | m.Protocol
     return m.Class(name, bases_plus.bases, ts, bases_plus.type_vars)
 
 
-def convert_function(r: m.Registry, s: Scope, t: Function, name: m.Name | None) -> m.Fn:
+def convert_function(r: m.Registry, s: Scope, t: Function, name: m.NameFn | None) -> m.Fn:
     if name is not None:
         s = s.with_at(name)
     sig = inspect.signature(typing.cast(Callable[..., Any], t), eval_str=True)
@@ -231,8 +233,8 @@ def get_bases(r: m.Registry, s: Scope, t: type[Any]) -> Bases:
             raw_bases.append(u)
 
     bases = tuple(convert_and_add(r, s, base) for base in raw_bases)
-    if not bases and get_name(t) != m.Name("builtins->object"):
-        bases = (m.Name("builtins->object"),)
+    if not bases and get_name(t) != m.NameClass("builtins->object"):
+        bases = (m.NameClass("builtins->object"),)
     type_vars = tuple(convert_type_var(r, s, type_var) for type_var in raw_type_vars)
     return Bases(bases, is_protocol, type_vars)
 
@@ -268,13 +270,23 @@ PARAMETER_KIND_MAP = {
 TYPESHED_PREFIX = typeshed.__package__ + "."
 
 
+@typing.overload
+def get_name(t: type) -> m.NameClass: ...
+@typing.overload
+def get_name(t: types.FunctionType) -> m.NameFn: ...
+
+
 @cache
-def get_name(t: Any) -> m.Name:
+def get_name(t: type | types.FunctionType) -> m.NameClass | m.NameFn:
     module = t.__module__
     assert isinstance(module, str)
     if module.startswith(TYPESHED_PREFIX):
         module = module[len(TYPESHED_PREFIX) :]
-    return m.Name(f"{module}->{t.__name__}")
+    if isinstance(t, type):
+        return m.NameClass(f"{module}->{t.__name__}")
+    if isinstance(t, types.FunctionType):
+        return m.NameFn(f"{module}->{t.__name__}")
+    raise NotImplementedError()
 
 
 @cache

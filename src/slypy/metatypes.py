@@ -8,17 +8,17 @@ from slypy import errors, helpers
 
 @dataclass
 class Registry:
-    refs: dict[Name, MetaType] = field(default_factory=dict)
+    refs: dict[NameClass | NameFn, MetaType] = field(default_factory=dict)
 
-    def get(self, n: Name) -> MetaType:
+    def get(self, n: NameClass | NameFn) -> MetaType:
         if n not in self:
             raise errors.SlyPyError(f"{n!r} not in registry")
         return self.refs[n]
 
-    def __contains__(self, n: Name) -> bool:
+    def __contains__(self, n: NameClass | NameFn) -> bool:
         return n in self.refs
 
-    def add(self, n: Name, t: MetaType) -> None:
+    def add(self, n: NameClass | NameFn, t: MetaType) -> None:
         self.refs[n] = t
 
 
@@ -76,7 +76,7 @@ class Tuple(_WithPosition):
 
 @dataclass(frozen=True)
 class EnumValue:
-    t: Name
+    t: NameClass
     name: str
     value: str | int
 
@@ -138,7 +138,7 @@ class Parameter(_WithPosition):
 
 @dataclass(frozen=True, kw_only=True)
 class Fn(_WithPosition):
-    name: Name | None = None
+    name: NameFn | None = None
     parameters: tuple[Parameter, ...]
     returns: MetaType
 
@@ -152,14 +152,16 @@ class Fn(_WithPosition):
 @dataclass(frozen=True)
 class TypeVar(_WithPosition):
     name: str
-    at: Name
+    at: NameClass | NameFn
     # We set to `Any` for `bound=None` and `tuple(...)` for `constraints=...`
     bound: MetaType | tuple[MetaType, ...]
 
 
 @dataclass(frozen=True)
 class Bound(_WithPosition):
-    t: MetaType
+    """Eg: list[int]"""
+
+    t: NameClass | Class | Protocol
     bound: tuple[MetaType, ...]
 
 
@@ -180,7 +182,7 @@ class ClassVar(_WithPosition):
 
 @dataclass(frozen=True)
 class Method(_WithPosition):
-    t: MetaType  # Should always be `Fn`
+    t: Fn  # Should always be `Fn`
 
     def as_fn(self) -> Fn:
         if not isinstance(self.t, Fn):
@@ -190,7 +192,7 @@ class Method(_WithPosition):
 
 @dataclass
 class _Class:
-    name: Name
+    name: NameClass
     bases: tuple[MetaType, ...]
     ts: dict[str, MetaType]
     type_vars: tuple[TypeVar, ...] = ()
@@ -239,7 +241,7 @@ class Protocol(_Class):
 
 
 @dataclass(frozen=True)
-class Name(_WithPosition):
+class _Name(_WithPosition):
     absolute_name: str
 
     def __repr__(self) -> str:
@@ -255,6 +257,14 @@ class Name(_WithPosition):
 
 
 @dataclass(frozen=True)
+class NameClass(_Name): ...
+
+
+@dataclass(frozen=True)
+class NameFn(_Name): ...
+
+
+@dataclass(frozen=True)
 class Unknown(_WithPosition): ...
 
 
@@ -263,7 +273,8 @@ class Self(_WithPosition): ...
 
 
 MetaType = (
-    Name  #
+    NameClass  #
+    | NameFn
     | Class
     | Protocol
     | Literal
@@ -284,43 +295,48 @@ MetaType = (
 )
 
 
-def python_to_meta(t: type[typing.Any]) -> Name:
+def python_to_meta(t: type[typing.Any]) -> NameClass:
     if isinstance(t, type):
-        return Name(f"{t.__module__}->{t.__name__}")
+        return NameClass(f"{t.__module__}->{t.__name__}")
     raise errors.SlyPyError(f"Unhandled type: {t}")
 
 
-def literal_to_type_name(value: LiteralValue) -> Name:
+def literal_to_type_name(value: LiteralValue) -> NameClass:
     if isinstance(value, bool):
-        return Name("builtins->bool")
+        return NameClass("builtins->bool")
     if isinstance(value, int):
-        return Name("builtins->int")
+        return NameClass("builtins->int")
     if isinstance(value, float):
-        return Name("builtins->float")
+        return NameClass("builtins->float")
     if isinstance(value, bytes):
-        return Name("builtins->bytes")
+        return NameClass("builtins->bytes")
     if isinstance(value, str):
-        return Name("builtins->str")
+        return NameClass("builtins->str")
     if value is None:
-        return Name("builtins->NoneType")
+        return NameClass("builtins->NoneType")
     if isinstance(value, EnumValue):
         return value.t
     typing.assert_never(value)
 
 
-def assert_name(t: MetaType) -> Name:
-    if not isinstance(t, Name):
-        raise errors.SlyPyError(f"{t} is not a Name")
+def assert_name(t: MetaType) -> NameClass:
+    if not isinstance(t, NameClass):
+        raise errors.SlyPyError(f"{t} is not a NameClass")
+    return t
+
+def assert_name_fn(t: MetaType) -> NameFn:
+    if not isinstance(t, NameFn):
+        raise errors.SlyPyError(f"{t} is not a NameFn")
     return t
 
 
 def walk(t: MetaType, f: typing.Callable[[MetaType], MetaType]) -> MetaType:
     t = f(t)
-    if isinstance(t, Unknown | Self | Name | Error):
+    if isinstance(t, Unknown | Self | NameClass | NameFn | Error):
         return t
     elif isinstance(t, Not | Type | ClassVar | ReadOnly | Method):
         return t.__class__(
-            t=walk(t.t, f),
+            t=walk(t.t, f),  # type: ignore[arg-type]
             position=t.position,
         )
     elif isinstance(t, Literal):
@@ -365,7 +381,7 @@ def walk(t: MetaType, f: typing.Callable[[MetaType], MetaType]) -> MetaType:
         )
     elif isinstance(t, Bound):
         return t.__class__(
-            t=walk(t.t, f),
+            t=walk(t.t, f),  # type: ignore[arg-type]
             bound=tuple(walk(b, f) for b in t.bound),
             position=t.position,
         )

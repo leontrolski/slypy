@@ -8,8 +8,9 @@
 # TODO - required for MVP
 
 - Handle parent classes/generics in `issubtype`.
-- I'm not happy with `converters.Scope`, see below.
 - Work through `Unsupported`, `Passthrough`.
+- Tests for Method Resolution Order
+- `converters.Scope` - I'm a bit worried about the `str` -> `TypeVar` map. What if there's `Generic[a.T, b.T]` - is that even allowed? Is the scoping remotely the same as lexical scoping? It shouldn't follow `Name`s or something.
 - Infer variance.
 - Replace most `raise errors.` with `return errors.`
 
@@ -18,10 +19,7 @@
 - `overload`
 - `dataclass_transform` + `dataclass.field(...)`
 - `TypedDict` + `Required` + `NotRequired` + `ReadOnly`
-- Copy tests from `ty` - not very confident about:
-    - Method Resolution Order
-    - Still not totally confident on the
-    - TypeVar scoping - I'm a bit worried about the `str` -> `TypeVar` map. What if there's `Generic[a.T, b.T]` - is that even allowed? Is the scoping remotely the same as lexical scoping? It shouldn't follow `Name`s or something.
+- Copy tests from `ty`
 - `NamedTuple`
 - `TypeIs`
 - `TypeVarTuple` + `Unpack`

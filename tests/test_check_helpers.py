@@ -10,14 +10,14 @@ def test_bind() -> None:
     t = check.bind(
         r,
         m.Bound(
-            m.Name("builtins->list"),
-            (m.Name("X"),),
+            m.NameClass("builtins->list"),
+            (m.NameClass("X"),),
         ),
     )
     assert isinstance(t, m.Class)
     assert t.ts["__iter__"] == m.Method(
         m.Fn(
-            name=m.Name("builtins->list.__iter__"),
+            name=m.NameFn("builtins->list.__iter__"),
             parameters=(
                 m.Parameter(
                     kind=m.ParameterKind.POSITIONAL_OR_KEYWORD,
@@ -25,7 +25,7 @@ def test_bind() -> None:
                     t=m.Unknown(),
                 ),
             ),
-            returns=m.Bound(t=m.Name("typing->Iterator"), bound=(m.Name("X"),)),
+            returns=m.Bound(t=m.NameClass("typing->Iterator"), bound=(m.NameClass("X"),)),
         )
     )
 
@@ -57,9 +57,9 @@ def test_all_ts() -> None:
 
     ts = check.all_ts(r, name)
     assert ts.keys() == {"x", "y", "z"}
-    assert ts["x"] == m.Name("builtins->str")
+    assert ts["x"] == m.NameClass("builtins->str")
 
     name = m.assert_name(converters.convert_and_add(r, s, D))
     ts = check.all_ts(r, name)
     assert ts.keys() == {"x", "y", "z"}
-    assert ts["x"] == m.Name("builtins->int")
+    assert ts["x"] == m.NameClass("builtins->int")

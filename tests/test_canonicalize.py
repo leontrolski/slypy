@@ -3,11 +3,11 @@ from slypy import canonicalize, metatypes as m
 import pytest
 
 # Define some reusable class instances
-A = m.Class(m.Name("A"), (), {})
-B = m.Class(m.Name("B"), (), {})
-C = m.Class(m.Name("C"), (), {})
-D = m.Class(m.Name("D"), (), {})
-Bool = m.Class(m.Name("builtins->bool"), (), {})
+A = m.Class(m.NameClass("A"), (), {})
+B = m.Class(m.NameClass("B"), (), {})
+C = m.Class(m.NameClass("C"), (), {})
+D = m.Class(m.NameClass("D"), (), {})
+Bool = m.Class(m.NameClass("builtins->bool"), (), {})
 
 
 @pytest.mark.parametrize(

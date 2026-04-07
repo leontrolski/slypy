@@ -40,7 +40,7 @@ def canonicalize(registry: m.Registry, t: m.MetaType) -> m.MetaType:
     """
     f = partial(canonicalize, registry)
 
-    if isinstance(t, m.Name):
+    if isinstance(t, m.NameClass | m.NameFn):
         return f(registry.get(t))
 
     if isinstance(t, Passthrough):
